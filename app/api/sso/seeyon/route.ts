@@ -75,6 +75,16 @@ export async function GET(request: NextRequest) {
         maxAge: 8 * 60 * 60, // 8 hours in seconds
       });
 
+      // 设置客户端可见的 non-HttpOnly Cookie，用于判断 Session 存活并执行自动登出
+      cookieStore.set('session_active', 'true', {
+        domain: process.env.COOKIE_DOMAIN || '.izpje.com',
+        path: '/',
+        httpOnly: false,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        maxAge: 8 * 60 * 60, // 8 小时
+      });
+
       console.info(`SSO verified successfully from cache for user: ${loginName}. Redirecting to homepage.`);
       return NextResponse.redirect(new URL('/', redirectBase));
     } catch (err) {

@@ -83,6 +83,7 @@ model Member {
   emailAddress    String?     // 电子邮件
   enabled         Boolean     @default(true)
   isDeleted       Boolean     @default(false)
+  isAdmin         Boolean     @default(false) // 是否为管理员
 
   // 关联关系
   orgAccountId    String

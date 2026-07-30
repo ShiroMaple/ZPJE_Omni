@@ -9,6 +9,7 @@ const initialApps = [
         icon: 'Zap',
         category: '能源管理',
         sortOrder: 1,
+        mainDeptId: '3903028799223120739', // 生产技术部
     },
     {
         key: 'FabFlow',
@@ -18,6 +19,7 @@ const initialApps = [
         icon: 'Calculator',
         category: '生产计划',
         sortOrder: 2,
+        mainDeptId: '3903028799223120739', // 生产技术部
     },
     {
         key: 'supos_Kanban',
@@ -27,6 +29,7 @@ const initialApps = [
         icon: 'LayoutDashboard',
         category: '数采监控',
         sortOrder: 3,
+        mainDeptId: '3903028799223120739', // 生产技术部
     },
     {
         key: 'DocEx',
@@ -36,6 +39,7 @@ const initialApps = [
         icon: 'FileText',
         category: '智能工具',
         sortOrder: 4,
+        mainDeptId: '3874094900378814311', // 人力资源部
     },
     {
         key: 'WeldSnap',
@@ -45,6 +49,7 @@ const initialApps = [
         icon: 'Activity',
         category: '质量管理',
         sortOrder: 5,
+        mainDeptId: '1837058068862029671', // 安全环保部
     },
 ];
 
