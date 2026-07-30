@@ -70,6 +70,16 @@ interface UserInfo {
   deptName: string;
 }
 
+interface WidgetConfig {
+  id: string;
+  title: string;
+  appId: string | null;
+  type: string;
+  url: string;
+  widthClass: string;
+  sortOrder: number;
+}
+
 interface DashboardProps {
   userId: string;
   initialApps: DBApp[];
@@ -77,6 +87,7 @@ interface DashboardProps {
   isAdmin: boolean;
   userInfo: UserInfo | null;
   initialFavoriteIds: string[];
+  widgets: WidgetConfig[];
 }
 
 interface CommandItem {
@@ -135,7 +146,86 @@ const DEFAULT_COLOR = {
   borderHover: 'hover:border-slate-500/40 dark:hover:border-slate-500/60 shadow-slate-500/2 hover:shadow-slate-500/10'
 };
 
-export default function Dashboard({ userId, initialApps, departments, isAdmin, userInfo, initialFavoriteIds }: DashboardProps) {
+function DashboardWidget({ widget }: { widget: WidgetConfig }) {
+  const [data, setData] = useState<{ metrics?: Array<{ label: string, value: string, change: string, trend: string }> } | null>(null);
+  const [loading, setLoading] = useState(widget.type === 'api');
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (widget.type !== 'api') return;
+    const fetchWidgetData = async () => {
+      try {
+        const res = await fetch(widget.url);
+        if (!res.ok) throw new Error('载入接口指标失败');
+        const json = await res.json();
+        setData(json);
+      } catch (err: any) {
+        setError(err.message);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchWidgetData();
+  }, [widget]);
+
+  const widthClass = 
+    widget.widthClass === 'col-span-3' ? 'md:col-span-3' :
+    widget.widthClass === 'col-span-2' ? 'md:col-span-2' :
+    'col-span-1';
+
+  return (
+    <div className={`p-4 rounded-xl bg-card-surface border border-card-border shadow-sm flex flex-col justify-between ${widthClass} min-h-[12rem] transition-all`}>
+      <div className="flex items-center justify-between border-b border-card-border pb-2 mb-2">
+        <h4 className="font-bold text-title text-sm">{widget.title}</h4>
+        <span className="text-[9px] px-2 py-0.5 rounded-full bg-sidebar-hover text-text-sec font-semibold tracking-wider font-sans">
+          {widget.type === 'api' ? '数据中心' : '看板嵌入'}
+        </span>
+      </div>
+
+      <div className="flex-1 flex flex-col justify-center">
+        {widget.type === 'iframe' ? (
+          <iframe 
+            src={widget.url} 
+            className="w-full h-28 border-0 rounded-lg overflow-hidden"
+            title={widget.title}
+          />
+        ) : loading ? (
+          <div className="flex items-center justify-center h-16 text-xs text-text-sec animate-pulse">
+            正在连接实时数据服务...
+          </div>
+        ) : error ? (
+          <div className="flex items-center justify-center gap-1 h-16 text-xs text-red-500 font-semibold">
+            <AlertTriangle className="w-3.5 h-3.5" />
+            <span>载入失败: {error}</span>
+          </div>
+        ) : data?.metrics ? (
+          <div className="grid grid-cols-2 gap-2 mt-1">
+            {data.metrics.map((m, idx) => (
+              <div key={idx} className="bg-sidebar-hover/30 p-2 rounded-lg flex flex-col">
+                <span className="text-[10px] text-text-sec truncate">{m.label}</span>
+                <div className="flex items-baseline justify-between mt-0.5 gap-1.5">
+                  <span className="text-xs lg:text-sm font-extrabold text-title font-mono">{m.value}</span>
+                  <span className={`text-[9px] font-bold ${
+                    m.trend === 'up' ? 'text-emerald-500' :
+                    m.trend === 'down' ? 'text-red-500' : 'text-text-sec'
+                  }`}>
+                    {m.change}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="text-center text-xs text-text-sec italic py-6">
+            无可用指标。
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export default function Dashboard({ userId, initialApps, departments, isAdmin, userInfo, initialFavoriteIds, widgets }: DashboardProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeDeptId, setActiveDeptId] = useState<string | null>(null);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
@@ -744,6 +834,21 @@ export default function Dashboard({ userId, initialApps, departments, isAdmin, u
           {/* Apps Grid Panel */}
           <div className="flex-1 w-full flex flex-col gap-8">
             
+            {/* 3.2 Dynamic Widgets Grid Area */}
+            {widgets && widgets.length > 0 && (
+              <div className="flex flex-col gap-4">
+                <div className="flex items-center gap-2">
+                  <Activity className="w-5 h-5 text-zpje-brand" />
+                  <h2 className="text-lg font-bold tracking-wide text-title">数据看板</h2>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  {widgets.map((widget) => (
+                    <DashboardWidget key={widget.id} widget={widget} />
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* 2.1.1 Favorite apps region */}
             {favoriteApps.length > 0 && (
               <div className="flex flex-col gap-4 border-b border-card-border pb-8">

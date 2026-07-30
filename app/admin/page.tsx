@@ -34,7 +34,7 @@ export default async function AdminPage() {
     );
   }
 
-  // Fetch initial apps and departments tree
+  // Fetch initial apps and departments tree with visibility permissions
   const apps = await prisma.app.findMany({
     include: {
       mainDept: {
@@ -42,6 +42,12 @@ export default async function AdminPage() {
           id: true,
           name: true,
         }
+      },
+      rolePermissions: {
+        select: { roleId: true }
+      },
+      deptPermissions: {
+        select: { departmentId: true }
       }
     },
     orderBy: {
@@ -81,13 +87,41 @@ export default async function AdminPage() {
     }
   });
 
-  // Map Decimal or other custom fields to string if any, but our schema types are simple strings and numbers
+  const roles = await prisma.role.findMany({
+    orderBy: {
+      key: 'asc'
+    }
+  });
+
+  const widgets = await prisma.widget.findMany({
+    include: {
+      app: {
+        select: {
+          name: true
+        }
+      }
+    },
+    orderBy: {
+      sortOrder: 'asc'
+    }
+  });
+
+  // Serialize models safely for client
   const serializedApps = apps.map((app) => ({
-    ...app,
+    id: app.id,
+    key: app.key,
+    name: app.name,
     description: app.description || null,
+    url: app.url,
     icon: app.icon || null,
+    category: app.category,
+    isMaintenance: app.isMaintenance,
+    sortOrder: app.sortOrder,
     mainDeptId: app.mainDeptId || null,
     mainDept: app.mainDept ? { id: app.mainDept.id, name: app.mainDept.name } : null,
+    visibleToAll: app.visibleToAll,
+    roleIds: app.rolePermissions.map(rp => rp.roleId),
+    deptIds: app.deptPermissions.map(dp => dp.departmentId),
   }));
 
   const serializedUnits = units.map((unit) => ({
@@ -107,9 +141,26 @@ export default async function AdminPage() {
     userAgent: log.userAgent,
     timestamp: log.timestamp.toISOString(),
     app: {
-      name: log.app.name,
-      key: log.app.key
+      name: log.app?.name || '未知应用',
+      key: log.app?.key || 'unknown'
     }
+  }));
+
+  const serializedRoles = roles.map((role) => ({
+    id: role.id,
+    key: role.key,
+    name: role.name
+  }));
+
+  const serializedWidgets = widgets.map((w) => ({
+    id: w.id,
+    title: w.title,
+    appId: w.appId || null,
+    appName: w.app?.name || null,
+    type: w.type,
+    url: w.url,
+    widthClass: w.widthClass,
+    sortOrder: w.sortOrder
   }));
 
   return (
@@ -117,6 +168,8 @@ export default async function AdminPage() {
       initialApps={serializedApps} 
       departmentsTree={serializedUnits} 
       accessLogs={serializedAccessLogs}
+      roles={serializedRoles}
+      initialWidgets={serializedWidgets}
     />
   );
 }

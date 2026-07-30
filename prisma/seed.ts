@@ -63,6 +63,21 @@ async function main() {
         });
     }
     console.log('预置应用数据导入成功！');
+
+    console.log('开始写入预置角色数据...');
+    const roles = [
+        { key: 'admin', name: '系统管理员' },
+        { key: 'operator', name: '高级操作员' },
+        { key: 'user', name: '普通员工' }
+    ];
+    for (const role of roles) {
+        await prisma.role.upsert({
+            where: { key: role.key },
+            update: { name: role.name },
+            create: role,
+        });
+    }
+    console.log('预置角色数据导入成功！');
 }
 
 main()

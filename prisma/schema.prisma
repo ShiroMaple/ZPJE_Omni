@@ -28,11 +28,16 @@ model App {
   mainDeptId    String?
   mainDept      Department? @relation(fields: [mainDeptId], references: [id], onDelete: SetNull)
 
+  visibleToAll  Boolean @default(true)
+
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   favorites   UserFavorite[]
   accessLogs  AccessLog[]
+  rolePermissions AppRolePermission[]
+  deptPermissions AppDepartmentPermission[]
+  widgets        Widget[]
 
   @@map("apps")
 }
@@ -68,6 +73,7 @@ model Department {
 
   members      Member[]
   apps         App[]
+  appPermissions AppDepartmentPermission[]
 
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
@@ -97,6 +103,7 @@ model Member {
 
   createdAt       DateTime    @default(now())
   updatedAt       DateTime    @updatedAt
+  roles           MemberRole[]
 
   @@map("members")
 }
@@ -124,4 +131,73 @@ model AccessLog {
   timestamp DateTime @default(now())
 
   @@map("access_logs")
+}
+
+// 角色模型
+model Role {
+  id          String   @id @default(cuid())
+  key         String   @unique // 例如 "admin", "operator", "user"
+  name        String   // 例如 "系统管理员", "操作员", "普通员工"
+  members     MemberRole[]
+  permissions AppRolePermission[]
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("roles")
+}
+
+// 人员所属角色关联模型
+model MemberRole {
+  id        String   @id @default(cuid())
+  memberId  String
+  member    Member   @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  roleId    String
+  role      Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([memberId, roleId])
+  @@map("member_roles")
+}
+
+// 应用角色权限关联模型
+model AppRolePermission {
+  id        String   @id @default(cuid())
+  appId     String
+  app       App      @relation(fields: [appId], references: [id], onDelete: Cascade)
+  roleId    String
+  role      Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([appId, roleId])
+  @@map("app_role_permissions")
+}
+
+// 应用部门可见性关联模型
+model AppDepartmentPermission {
+  id           String     @id @default(cuid())
+  appId        String
+  app          App        @relation(fields: [appId], references: [id], onDelete: Cascade)
+  departmentId String
+  department   Department @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+  createdAt    DateTime   @default(now())
+
+  @@unique([appId, departmentId])
+  @@map("app_department_permissions")
+}
+
+// 首页 Widget 看板数据模型
+model Widget {
+  id          String   @id @default(cuid())
+  title       String   // 看板标题
+  appId       String?  // 关联的子系统ID
+  app         App?     @relation(fields: [appId], references: [id], onDelete: SetNull)
+  type        String   // "iframe" 或者是 "api"
+  url         String   // 数据获取端点或网页地址 (支持大文本) @db.Text
+  widthClass  String   @default("col-span-1") // 网格占比: col-span-1, col-span-2, col-span-3
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("widgets")
 }

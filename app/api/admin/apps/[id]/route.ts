@@ -24,6 +24,9 @@ export async function PUT(
       isMaintenance,
       sortOrder,
       mainDeptId,
+      visibleToAll,
+      roleIds,
+      deptIds
     } = body;
 
     // Check if app exists
@@ -44,20 +47,31 @@ export async function PUT(
       }
     }
 
-    const updatedApp = await prisma.app.update({
-      where: { id },
-      data: {
-        key: key !== undefined ? key : app.key,
-        name: name !== undefined ? name : app.name,
-        description: description !== undefined ? description : app.description,
-        url: url !== undefined ? url : app.url,
-        icon: icon !== undefined ? icon : app.icon,
-        category: category !== undefined ? category : app.category,
-        isMaintenance: isMaintenance !== undefined ? !!isMaintenance : app.isMaintenance,
-        sortOrder: sortOrder !== undefined ? Number(sortOrder) : app.sortOrder,
-        mainDeptId: mainDeptId !== undefined ? (mainDeptId || null) : app.mainDeptId,
-      },
-    });
+    const [_, __, updatedApp] = await prisma.$transaction([
+      prisma.appRolePermission.deleteMany({ where: { appId: id } }),
+      prisma.appDepartmentPermission.deleteMany({ where: { appId: id } }),
+      prisma.app.update({
+        where: { id },
+        data: {
+          key: key !== undefined ? key : app.key,
+          name: name !== undefined ? name : app.name,
+          description: description !== undefined ? description : app.description,
+          url: url !== undefined ? url : app.url,
+          icon: icon !== undefined ? icon : app.icon,
+          category: category !== undefined ? category : app.category,
+          isMaintenance: isMaintenance !== undefined ? !!isMaintenance : app.isMaintenance,
+          sortOrder: sortOrder !== undefined ? Number(sortOrder) : app.sortOrder,
+          mainDeptId: mainDeptId !== undefined ? (mainDeptId || null) : app.mainDeptId,
+          visibleToAll: visibleToAll !== undefined ? !!visibleToAll : app.visibleToAll,
+          rolePermissions: {
+            create: (roleIds || []).map((roleId: string) => ({ roleId }))
+          },
+          deptPermissions: {
+            create: (deptIds || []).map((departmentId: string) => ({ departmentId }))
+          }
+        },
+      })
+    ]);
 
     return NextResponse.json(updatedApp);
   } catch (err: any) {

@@ -19,6 +19,9 @@ export default async function Page() {
   // Fetch detailed user info and favorites if logged in
   let currentUserInfo = null;
   let favoriteAppIds: string[] = [];
+  let userRoleKeys: string[] = [];
+  let userDeptId: string | null = null;
+
   if (userId !== 'guest') {
     const member = await prisma.member.findUnique({
       where: { loginName: userId },
@@ -27,7 +30,14 @@ export default async function Page() {
           select: { name: true }
         },
         department: {
-          select: { name: true }
+          select: { id: true, name: true }
+        },
+        roles: {
+          include: {
+            role: {
+              select: { key: true }
+            }
+          }
         }
       }
     });
@@ -38,6 +48,12 @@ export default async function Page() {
         unitName: member.unit?.name || '未知单位',
         deptName: member.department?.name || '未知部门',
       };
+      userDeptId = member.department?.id || null;
+      userRoleKeys = member.roles.map(r => r.role.key);
+    }
+
+    if (isAdmin || userId === 'admin' || userId === 'OmniRest') {
+      userRoleKeys.push('admin');
     }
 
     const favorites = await prisma.userFavorite.findMany({
@@ -47,13 +63,25 @@ export default async function Page() {
     favoriteAppIds = favorites.map(f => f.appId);
   }
 
-  // Fetch all apps with their associated mainDept details
+  // Fetch all apps with their associated permissions & mainDept details
   const apps = await prisma.app.findMany({
     include: {
       mainDept: {
         select: {
           id: true,
           name: true,
+        }
+      },
+      rolePermissions: {
+        select: {
+          role: {
+            select: { key: true }
+          }
+        }
+      },
+      deptPermissions: {
+        select: {
+          departmentId: true
         }
       }
     },
@@ -62,11 +90,37 @@ export default async function Page() {
     },
   });
 
-  // Fetch only departments that have at least one app registered
+  // Filter apps based on RBAC visibility:
+  // - Admin sees everything.
+  // - App is visible if app.visibleToAll is true.
+  // - App is visible if user has an allowed role (app.rolePermissions matches userRoleKeys).
+  // - App is visible if user department matches an allowed department (app.deptPermissions matches userDeptId).
+  const filteredApps = apps.filter(app => {
+    if (isAdmin || userId === 'admin' || userId === 'OmniRest') return true; // Admin bypass
+    if (app.visibleToAll) return true; // Public access
+    
+    // Check roles
+    const hasAllowedRole = app.rolePermissions.some(rp => userRoleKeys.includes(rp.role.key));
+    if (hasAllowedRole) return true;
+
+    // Check department
+    if (userDeptId) {
+      const hasAllowedDept = app.deptPermissions.some(dp => dp.departmentId === userDeptId);
+      if (hasAllowedDept) return true;
+    }
+
+    return false;
+  });
+
+  // Fetch only departments that have at least one of the visible apps registered
+  const visibleAppDeptIds = filteredApps
+    .map(a => a.mainDeptId)
+    .filter((id): id is string => id !== null);
+
   const departments = await prisma.department.findMany({
     where: {
-      apps: {
-        some: {}
+      id: {
+        in: visibleAppDeptIds
       }
     },
     select: {
@@ -78,8 +132,15 @@ export default async function Page() {
     }
   });
 
+  // Fetch homepage widgets
+  const widgets = await prisma.widget.findMany({
+    orderBy: {
+      sortOrder: 'asc'
+    }
+  });
+
   // Serialize models safely for client
-  const serializedApps = apps.map((app) => ({
+  const serializedApps = filteredApps.map((app) => ({
     id: app.id,
     key: app.key,
     name: app.name,
@@ -93,6 +154,16 @@ export default async function Page() {
     mainDept: app.mainDept ? { id: app.mainDept.id, name: app.mainDept.name } : null,
   }));
 
+  const serializedWidgets = widgets.map((widget) => ({
+    id: widget.id,
+    title: widget.title,
+    appId: widget.appId,
+    type: widget.type,
+    url: widget.url,
+    widthClass: widget.widthClass,
+    sortOrder: widget.sortOrder
+  }));
+
   return (
     <Dashboard 
       userId={userId} 
@@ -101,7 +172,7 @@ export default async function Page() {
       isAdmin={isAdmin}
       userInfo={currentUserInfo}
       initialFavoriteIds={favoriteAppIds}
+      widgets={serializedWidgets}
     />
   );
 }
-

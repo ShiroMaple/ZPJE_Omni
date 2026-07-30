@@ -47,6 +47,9 @@ export async function POST(request: NextRequest) {
       isMaintenance,
       sortOrder,
       mainDeptId,
+      visibleToAll,
+      roleIds,
+      deptIds
     } = body;
 
     if (!key || !name || !url) {
@@ -72,6 +75,13 @@ export async function POST(request: NextRequest) {
         isMaintenance: !!isMaintenance,
         sortOrder: sortOrder !== undefined ? Number(sortOrder) : 0,
         mainDeptId: mainDeptId || null,
+        visibleToAll: visibleToAll !== undefined ? !!visibleToAll : true,
+        rolePermissions: {
+          create: (roleIds || []).map((roleId: string) => ({ roleId }))
+        },
+        deptPermissions: {
+          create: (deptIds || []).map((departmentId: string) => ({ departmentId }))
+        }
       },
     });
 
