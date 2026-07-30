@@ -31,6 +31,9 @@ model App {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
+  favorites   UserFavorite[]
+  accessLogs  AccessLog[]
+
   @@map("apps")
 }
 
@@ -96,4 +99,29 @@ model Member {
   updatedAt       DateTime    @updatedAt
 
   @@map("members")
+}
+
+// 常用应用收藏模型
+model UserFavorite {
+  id        String   @id @default(cuid())
+  loginName String   // 用户登录账号
+  appId     String   // 收藏的应用ID
+  app       App      @relation(fields: [appId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([loginName, appId]) // 联合唯一约束
+  @@map("user_favorites")
+}
+
+// 访问审计与行为日志模型
+model AccessLog {
+  id        String   @id @default(cuid())
+  loginName String   // 用户登录账号
+  appId     String   // 访问的应用ID
+  app       App      @relation(fields: [appId], references: [id], onDelete: Cascade)
+  ip        String?  // 访问 IP 地址
+  userAgent String?  @db.Text // 浏览器 User Agent
+  timestamp DateTime @default(now())
+
+  @@map("access_logs")
 }

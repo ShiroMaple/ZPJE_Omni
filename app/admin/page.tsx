@@ -67,6 +67,20 @@ export default async function AdminPage() {
     }
   });
 
+  const accessLogs = await prisma.accessLog.findMany({
+    include: {
+      app: {
+        select: {
+          name: true,
+          key: true
+        }
+      }
+    },
+    orderBy: {
+      timestamp: 'desc'
+    }
+  });
+
   // Map Decimal or other custom fields to string if any, but our schema types are simple strings and numbers
   const serializedApps = apps.map((app) => ({
     ...app,
@@ -85,10 +99,24 @@ export default async function AdminPage() {
     })),
   }));
 
+  const serializedAccessLogs = accessLogs.map((log) => ({
+    id: log.id,
+    loginName: log.loginName,
+    appId: log.appId,
+    ip: log.ip,
+    userAgent: log.userAgent,
+    timestamp: log.timestamp.toISOString(),
+    app: {
+      name: log.app.name,
+      key: log.app.key
+    }
+  }));
+
   return (
     <AdminAppRegistry 
       initialApps={serializedApps} 
       departmentsTree={serializedUnits} 
+      accessLogs={serializedAccessLogs}
     />
   );
 }

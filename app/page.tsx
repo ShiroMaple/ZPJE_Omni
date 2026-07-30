@@ -16,8 +16,9 @@ export default async function Page() {
   const userId = headersList.get('x-user-id') || 'guest';
   const isAdmin = await checkAdmin();
 
-  // Fetch detailed user info if logged in
+  // Fetch detailed user info and favorites if logged in
   let currentUserInfo = null;
+  let favoriteAppIds: string[] = [];
   if (userId !== 'guest') {
     const member = await prisma.member.findUnique({
       where: { loginName: userId },
@@ -38,6 +39,12 @@ export default async function Page() {
         deptName: member.department?.name || '未知部门',
       };
     }
+
+    const favorites = await prisma.userFavorite.findMany({
+      where: { loginName: userId },
+      select: { appId: true }
+    });
+    favoriteAppIds = favorites.map(f => f.appId);
   }
 
   // Fetch all apps with their associated mainDept details
@@ -93,6 +100,7 @@ export default async function Page() {
       departments={departments}
       isAdmin={isAdmin}
       userInfo={currentUserInfo}
+      initialFavoriteIds={favoriteAppIds}
     />
   );
 }

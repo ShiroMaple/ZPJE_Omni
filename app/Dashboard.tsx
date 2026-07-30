@@ -1,7 +1,7 @@
 // app/Dashboard.tsx
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   Search, 
   ArrowRight, 
@@ -23,7 +23,9 @@ import {
   X,
   AlertTriangle,
   Sun,
-  Moon
+  Moon,
+  Star,
+  Command
 } from 'lucide-react';
 import Sidebar from './Sidebar';
 
@@ -74,6 +76,17 @@ interface DashboardProps {
   departments: Department[];
   isAdmin: boolean;
   userInfo: UserInfo | null;
+  initialFavoriteIds: string[];
+}
+
+interface CommandItem {
+  id: string;
+  type: 'app' | 'action';
+  name: string;
+  description: string;
+  action?: () => void;
+  url?: string;
+  appObject?: AppConfig;
 }
 
 const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
@@ -122,7 +135,7 @@ const DEFAULT_COLOR = {
   borderHover: 'hover:border-slate-500/40 dark:hover:border-slate-500/60 shadow-slate-500/2 hover:shadow-slate-500/10'
 };
 
-export default function Dashboard({ userId, initialApps, departments, isAdmin, userInfo }: DashboardProps) {
+export default function Dashboard({ userId, initialApps, departments, isAdmin, userInfo, initialFavoriteIds }: DashboardProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeDeptId, setActiveDeptId] = useState<string | null>(null);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
@@ -132,7 +145,16 @@ export default function Dashboard({ userId, initialApps, departments, isAdmin, u
   const [mounted, setMounted] = useState(false);
   const isGuest = userId === 'guest';
 
-  // Initialize theme from HTML element (set by head blocking script)
+  // Favorites state
+  const [favoriteIds, setFavoriteIds] = useState<string[]>(initialFavoriteIds || []);
+
+  // Command Palette state
+  const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
+  const [cmdQuery, setCmdQuery] = useState('');
+  const [activeCmdIndex, setActiveCmdIndex] = useState(0);
+  const paletteInputRef = useRef<HTMLInputElement>(null);
+
+  // Initialize theme from HTML element
   useEffect(() => {
     setMounted(true);
     const initialTheme = document.documentElement.getAttribute('data-theme') as 'light' | 'dark' || 'light';
@@ -158,7 +180,7 @@ export default function Dashboard({ userId, initialApps, departments, isAdmin, u
     }
   };
 
-  // Client-side auto-logout detection via non-HttpOnly session_active cookie
+  // Client-side auto-logout cookie probe
   useEffect(() => {
     if (isGuest) return;
 
@@ -177,6 +199,30 @@ export default function Dashboard({ userId, initialApps, departments, isAdmin, u
     const interval = setInterval(checkSession, 30000);
     return () => clearInterval(interval);
   }, [isGuest]);
+
+  // Global key listener for Ctrl+K command palette
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+        e.preventDefault();
+        setIsCommandPaletteOpen(prev => !prev);
+        setCmdQuery('');
+        setActiveCmdIndex(0);
+      }
+      if (e.key === 'Escape') {
+        setIsCommandPaletteOpen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  // Autofocus input when command palette opens
+  useEffect(() => {
+    if (isCommandPaletteOpen && paletteInputRef.current) {
+      setTimeout(() => paletteInputRef.current?.focus(), 50);
+    }
+  }, [isCommandPaletteOpen]);
 
   const mappedApps: AppConfig[] = initialApps.map((app) => {
     const IconComponent = ICON_MAP[app.icon || ''] || DEFAULT_ICON;
@@ -208,7 +254,7 @@ export default function Dashboard({ userId, initialApps, departments, isAdmin, u
 
   const totalAppsCount = mappedApps.length;
 
-  // Filter apps by both Search Query and Active Department
+  // Filter apps by Search Query and Department Filter
   const filteredApps = mappedApps.filter((app) => {
     const matchesSearch = 
       app.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -220,9 +266,261 @@ export default function Dashboard({ userId, initialApps, departments, isAdmin, u
     return matchesSearch && matchesDept;
   });
 
+  // Split apps into favorites and others
+  const favoriteApps = filteredApps.filter(app => favoriteIds.includes(app.id));
+
   const selectDept = (deptId: string | null) => {
     setActiveDeptId(deptId);
-    setIsMobileSidebarOpen(false); // Close mobile drawer on selection
+    setIsMobileSidebarOpen(false);
+  };
+
+  const toggleFavorite = async (e: React.MouseEvent, appId: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const isFav = favoriteIds.includes(appId);
+    const nextFavorites = isFav 
+      ? favoriteIds.filter(id => id !== appId)
+      : [...favoriteIds, appId];
+    setFavoriteIds(nextFavorites);
+
+    if (isGuest) return;
+
+    try {
+      if (isFav) {
+        await fetch(`/api/user/favorites?appId=${appId}`, { method: 'DELETE' });
+      } else {
+        await fetch('/api/user/favorites', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ appId })
+        });
+      }
+    } catch (err) {
+      console.error('Failed to toggle favorite:', err);
+      // Rollback
+      setFavoriteIds(favoriteIds);
+    }
+  };
+
+  const recordAccess = async (appId: string) => {
+    try {
+      await fetch('/api/user/access-logs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ appId })
+      });
+    } catch (err) {
+      console.error('Failed to record access audit:', err);
+    }
+  };
+
+  // Fuzzy match command items
+  const getCommandItems = (): CommandItem[] => {
+    const items: CommandItem[] = [];
+    
+    mappedApps.forEach(app => {
+      items.push({
+        id: `app-${app.id}`,
+        type: 'app',
+        name: app.name,
+        description: `${app.tag} - ${app.description}`,
+        url: app.url,
+        appObject: app
+      });
+    });
+
+    items.push({
+      id: 'action-theme',
+      type: 'action',
+      name: '切换系统主题 (Toggle Dark/Light Theme)',
+      description: `当前主题: ${theme === 'light' ? '亮色' : '暗色'}`,
+      action: () => toggleTheme()
+    });
+
+    items.push({
+      id: 'action-home',
+      type: 'action',
+      name: '返回门户首页 (Go to Portal Home)',
+      description: '重置部门筛选与搜索栏',
+      action: () => {
+        setActiveDeptId(null);
+        setSearchQuery('');
+      }
+    });
+
+    if (isAdmin) {
+      items.push({
+        id: 'action-admin',
+        type: 'action',
+        name: '进入管理后台 (Go to Admin Panel)',
+        description: '管理并配置公司子系统',
+        action: () => { window.location.href = '/admin'; }
+      });
+    }
+
+    if (!isGuest) {
+      items.push({
+        id: 'action-logout',
+        type: 'action',
+        name: '退出登录 (Log Out)',
+        description: '安全注销此会话并释放致远会话',
+        action: () => handleLogout()
+      });
+    }
+
+    if (!cmdQuery) {
+      return [...items.filter(i => i.type === 'app').slice(0, 5), ...items.filter(i => i.type === 'action')];
+    }
+
+    const queryWords = cmdQuery.toLowerCase().split(/\s+/).filter(Boolean);
+    return items.filter(item => {
+      const text = `${item.name} ${item.description}`.toLowerCase();
+      return queryWords.every(word => text.includes(word));
+    });
+  };
+
+  const commandItems = getCommandItems();
+
+  const handlePaletteKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setActiveCmdIndex(prev => (prev + 1) % Math.max(commandItems.length, 1));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setActiveCmdIndex(prev => (prev - 1 + commandItems.length) % Math.max(commandItems.length, 1));
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      const activeItem = commandItems[activeCmdIndex];
+      if (activeItem) {
+        executeCommand(activeItem);
+      }
+    }
+  };
+
+  const executeCommand = (item: CommandItem) => {
+    setIsCommandPaletteOpen(false);
+    setCmdQuery('');
+    setActiveCmdIndex(0);
+
+    if (item.type === 'app' && item.appObject) {
+      const app = item.appObject;
+      if (app.status === 'maintenance' || app.status === 'offline') {
+        setActiveAlertApp(app);
+      } else {
+        recordAccess(app.id);
+        window.open(app.url, '_blank', 'noopener,noreferrer');
+      }
+    } else if (item.type === 'action' && item.action) {
+      item.action();
+    }
+  };
+
+  const highlightMatch = (text: string, query: string) => {
+    if (!query) return <span>{text}</span>;
+    const parts = text.split(new RegExp(`(${query})`, 'gi'));
+    return (
+      <span>
+        {parts.map((part, i) => 
+          part.toLowerCase() === query.toLowerCase()
+            ? <mark key={i} className="bg-zpje-brand/15 text-zpje-brand font-semibold rounded px-0.5">{part}</mark>
+            : part
+        )}
+      </span>
+    );
+  };
+
+  const renderAppCard = (app: AppConfig, isFavoriteSection = false) => {
+    const IconComponent = app.icon;
+    const isMaintenanceMode = app.status === 'maintenance';
+    const isOffline = app.status === 'offline';
+    const colorClasses = app.color;
+    const isFav = favoriteIds.includes(app.id);
+
+    return (
+      <a
+        key={`${app.id}-${isFavoriteSection ? 'fav' : 'main'}`}
+        href={app.url}
+        target="_blank"
+        rel="noopener noreferrer"
+        onClick={(e) => {
+          if (isMaintenanceMode || isOffline) {
+            e.preventDefault();
+            setActiveAlertApp(app);
+          } else {
+            recordAccess(app.id);
+          }
+        }}
+        className={`group relative flex flex-col justify-between p-4 rounded-xl bg-card-surface border border-card-border ${colorClasses.borderHover} transition-all duration-300 hover:-translate-y-0.5 hover:shadow-md ${
+          isMaintenanceMode ? 'opacity-40 select-none' : ''
+        } ${isOffline ? 'opacity-50' : ''}`}
+      >
+        <div>
+          {/* Icon & Status & Favorite Button */}
+          <div className="flex items-center justify-between mb-3">
+            <div className={`p-2 rounded-lg ${colorClasses.iconBg} ${colorClasses.iconText} group-hover:scale-105 transition-transform`}>
+              <IconComponent className="w-5 h-5" />
+            </div>
+            
+            <div className="flex items-center gap-2">
+              {/* Status Badge */}
+              <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-sidebar-hover text-[10px] text-text-sec">
+                <span className={`w-1.5 h-1.5 rounded-full ${
+                  app.status === 'active' ? 'bg-emerald-500 animate-pulse' :
+                  app.status === 'maintenance' ? 'bg-amber-500' : 'bg-red-500'
+                }`} />
+                <span>
+                  {app.status === 'active' ? '运行中' :
+                   app.status === 'maintenance' ? '维护中' : '已离线'}
+                </span>
+              </div>
+
+              {/* Favorite Star Button */}
+              <button
+                onClick={(e) => toggleFavorite(e, app.id)}
+                className={`p-1.5 rounded-lg border transition-all duration-200 ${
+                  isFav 
+                    ? 'bg-amber-500/10 border-amber-500/20 text-amber-500' 
+                    : 'bg-sidebar-hover border-transparent text-text-sec hover:text-amber-500 hover:bg-amber-500/5'
+                }`}
+                title={isFav ? '取消收藏' : '收藏应用'}
+              >
+                <Star className={`w-3.5 h-3.5 ${isFav ? 'fill-amber-500' : ''}`} />
+              </button>
+            </div>
+          </div>
+
+          {/* Info */}
+          <h3 className="text-base font-bold text-title group-hover:text-zpje-brand transition-colors flex items-center gap-1">
+            {app.name}
+          </h3>
+          <div className="text-[10px] text-text-sec font-semibold tracking-wider uppercase mt-0.5">
+            {app.tag}
+          </div>
+          <p className="mt-2 text-xs text-text-sec leading-relaxed min-h-[3rem] line-clamp-2">
+            {app.description}
+          </p>
+        </div>
+
+        {/* Footer Trigger */}
+        <div className="mt-3 pt-2.5 border-t border-card-border flex items-center justify-between text-xs font-semibold">
+          <span className="text-text-sec group-hover:text-title transition-colors">
+            {isMaintenanceMode ? '系统维护中' : (isOffline ? '服务已离线' : '进入系统')}
+          </span>
+          {!isMaintenanceMode && !isOffline && (
+            <div className="flex items-center gap-1 text-zpje-brand group-hover:opacity-80 transition-colors">
+              <span>访问</span>
+              <ArrowRight className="w-3.5 h-3.5 transform group-hover:translate-x-0.5 transition-transform" />
+            </div>
+          )}
+          {isAdmin && (isMaintenanceMode || isOffline) && (
+            <span className="text-[10px] text-zpje-brand font-medium">
+              点击管理配置
+            </span>
+          )}
+        </div>
+      </a>
+    );
   };
 
   return (
@@ -241,7 +539,6 @@ export default function Dashboard({ userId, initialApps, departments, isAdmin, u
       <header className="sticky top-0 z-40 w-full border-b border-card-border bg-nav-bg backdrop-blur-md transition-colors duration-200">
         <div className="max-w-[1800px] w-full mx-auto px-6 md:px-12 h-20 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            {/* ZPJE logo replacement */}
             <div className="relative flex items-center justify-center w-10 h-10 rounded-xl overflow-hidden bg-white shadow-sm border border-card-border">
               <img src="/logo_zpje.jpg" alt="建安万维" className="w-full h-full object-cover" />
             </div>
@@ -253,6 +550,16 @@ export default function Dashboard({ userId, initialApps, departments, isAdmin, u
 
           {/* User Status & Controls */}
           <div className="flex items-center gap-3">
+            {/* Command Palette Indicator badge */}
+            <button
+              onClick={() => setIsCommandPaletteOpen(true)}
+              className="hidden md:flex items-center gap-1.5 px-3 py-2 rounded-xl bg-card-surface border border-card-border text-xs text-text-sec hover:text-title hover:bg-sidebar-hover transition-all"
+              title="打开全局指令面板"
+            >
+              <Command className="w-3.5 h-3.5" />
+              <span className="font-mono">Ctrl K</span>
+            </button>
+
             {/* Theme Toggle Button */}
             {mounted && (
               <button
@@ -373,8 +680,13 @@ export default function Dashboard({ userId, initialApps, departments, isAdmin, u
                 placeholder="搜索应用名称或功能..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="block w-full pl-11 pr-4 py-3 rounded-2xl bg-card-surface border border-input-border text-title placeholder-text-sec focus:outline-none focus:ring-2 focus:ring-title/20 focus:border-title transition-all text-sm"
+                className="block w-full pl-11 pr-16 py-3 rounded-2xl bg-card-surface border border-input-border text-title placeholder-text-sec focus:outline-none focus:ring-2 focus:ring-title/20 focus:border-title transition-all text-sm"
               />
+              <div className="absolute inset-y-0 right-0 pr-3.5 flex items-center pointer-events-none">
+                <kbd className="hidden sm:inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded border border-input-border bg-sidebar-hover text-[10px] font-mono text-text-sec">
+                  Ctrl K
+                </kbd>
+              </div>
             </div>
             <button
               onClick={() => setIsMobileSidebarOpen(true)}
@@ -430,97 +742,43 @@ export default function Dashboard({ userId, initialApps, departments, isAdmin, u
           )}
 
           {/* Apps Grid Panel */}
-          <div className="flex-1 w-full flex flex-col gap-6">
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold tracking-wide text-title">
-                可用子系统 ({filteredApps.length})
-              </h2>
-            </div>
-
-            {filteredApps.length > 0 ? (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {filteredApps.map((app) => {
-                  const IconComponent = app.icon;
-                  const isMaintenanceMode = app.status === 'maintenance';
-                  const isOffline = app.status === 'offline';
-                  const colorClasses = app.color;
-                  
-                  return (
-                    <a
-                      key={app.id}
-                      href={app.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      onClick={(e) => {
-                        if (isMaintenanceMode || isOffline) {
-                          e.preventDefault();
-                          setActiveAlertApp(app);
-                        }
-                      }}
-                      className={`group relative flex flex-col justify-between p-4 rounded-xl bg-card-surface border border-card-border ${colorClasses.borderHover} transition-all duration-300 hover:-translate-y-0.5 hover:shadow-md ${
-                        isMaintenanceMode ? 'opacity-40 select-none' : ''
-                      } ${isOffline ? 'opacity-50' : ''}`}
-                    >
-                      <div>
-                        {/* Icon & Status (mb-3 compact height) */}
-                        <div className="flex items-center justify-between mb-3">
-                          <div className={`p-2 rounded-lg ${colorClasses.iconBg} ${colorClasses.iconText} group-hover:scale-105 transition-transform`}>
-                            <IconComponent className="w-5 h-5" />
-                          </div>
-                          <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-sidebar-hover text-[10px] text-text-sec">
-                            <span className={`w-1.5 h-1.5 rounded-full ${
-                              app.status === 'active' ? 'bg-emerald-500 animate-pulse' :
-                              app.status === 'maintenance' ? 'bg-amber-500' : 'bg-red-500'
-                            }`} />
-                            <span>
-                              {app.status === 'active' ? '运行中' :
-                               app.status === 'maintenance' ? '维护中' : '已离线'}
-                            </span>
-                          </div>
-                        </div>
-
-                        {/* Info (text-base and min-h-[3rem] compact height) */}
-                        <h3 className="text-base font-bold text-title group-hover:text-zpje-brand transition-colors flex items-center gap-1">
-                          {app.name}
-                        </h3>
-                        <div className="text-[10px] text-text-sec font-semibold tracking-wider uppercase mt-0.5">
-                          {app.tag}
-                        </div>
-                        <p className="mt-2 text-xs text-text-sec leading-relaxed min-h-[3rem] line-clamp-2">
-                          {app.description}
-                        </p>
-                      </div>
-
-                      {/* Footer Trigger (mt-3 pt-2.5 compact height) */}
-                      <div className="mt-3 pt-2.5 border-t border-card-border flex items-center justify-between text-xs font-semibold">
-                        <span className="text-text-sec group-hover:text-title transition-colors">
-                          {isMaintenanceMode ? '系统维护中' : (isOffline ? '服务已离线' : '进入系统')}
-                        </span>
-                        {!isMaintenanceMode && !isOffline && (
-                          <div className="flex items-center gap-1 text-zpje-brand group-hover:opacity-80 transition-colors">
-                            <span>访问</span>
-                            <ArrowRight className="w-3.5 h-3.5 transform group-hover:translate-x-0.5 transition-transform" />
-                          </div>
-                        )}
-                        {isAdmin && (isMaintenanceMode || isOffline) && (
-                          <span className="text-[10px] text-zpje-brand font-medium">
-                            点击管理配置
-                          </span>
-                        )}
-                      </div>
-                    </a>
-                  );
-                })}
-              </div>
-            ) : (
-              <div className="flex flex-col items-center justify-center py-20 bg-card-surface rounded-2xl border border-card-border text-center px-4">
-                <ShieldCheck className="w-12 h-12 text-text-sec mb-4" />
-                <h3 className="text-lg font-semibold text-title">未找到匹配的系统</h3>
-                <p className="text-sm text-text-sec mt-2">
-                  请尝试更换搜索词或重置筛选条件。
-                </p>
+          <div className="flex-1 w-full flex flex-col gap-8">
+            
+            {/* 2.1.1 Favorite apps region */}
+            {favoriteApps.length > 0 && (
+              <div className="flex flex-col gap-4 border-b border-card-border pb-8">
+                <div className="flex items-center gap-2">
+                  <Star className="w-5 h-5 text-amber-500 fill-amber-500" />
+                  <h2 className="text-lg font-bold tracking-wide text-title">我的收藏</h2>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {favoriteApps.map(app => renderAppCard(app, true))}
+                </div>
               </div>
             )}
+
+            {/* Standard apps region */}
+            <div className="flex flex-col gap-6">
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-semibold tracking-wide text-title">
+                  可用子系统 ({filteredApps.length})
+                </h2>
+              </div>
+
+              {filteredApps.length > 0 ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {filteredApps.map(app => renderAppCard(app, false))}
+                </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center py-20 bg-card-surface rounded-2xl border border-card-border text-center px-4">
+                  <ShieldCheck className="w-12 h-12 text-text-sec mb-4" />
+                  <h3 className="text-lg font-semibold text-title">未找到匹配的系统</h3>
+                  <p className="text-sm text-text-sec mt-2">
+                    请尝试更换搜索词或重置筛选条件。
+                  </p>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </main>
@@ -540,6 +798,95 @@ export default function Dashboard({ userId, initialApps, departments, isAdmin, u
           </div>
         </div>
       </footer>
+
+      {/* Command Palette Overlay Dialog */}
+      {isCommandPaletteOpen && (
+        <div className="fixed inset-0 z-50 flex items-start justify-center pt-[15vh] p-4 bg-black/40 backdrop-blur-sm transition-all">
+          <div 
+            className="fixed inset-0 bg-transparent" 
+            onClick={() => setIsCommandPaletteOpen(false)}
+          />
+          <div className="relative w-full max-w-2xl bg-card-surface border border-card-border shadow-2xl rounded-2xl overflow-hidden flex flex-col max-h-[60vh] animate-in fade-in slide-in-from-top-4 duration-200">
+            {/* Input Header */}
+            <div className="flex items-center gap-3 px-4 border-b border-card-border bg-sidebar-hover/20">
+              <Search className="w-5 h-5 text-text-sec shrink-0" />
+              <input
+                ref={paletteInputRef}
+                type="text"
+                value={cmdQuery}
+                onChange={(e) => {
+                  setCmdQuery(e.target.value);
+                  setActiveCmdIndex(0);
+                }}
+                onKeyDown={handlePaletteKeyDown}
+                placeholder="键入应用名称、标签，或输入 `>` 查看系统指令..."
+                className="w-full py-4 bg-transparent text-title placeholder-text-sec focus:outline-none text-sm"
+              />
+              <span className="hidden sm:inline px-1.5 py-0.5 rounded border border-input-border text-[9px] font-mono text-text-sec uppercase">
+                ESC 关闭
+              </span>
+            </div>
+
+            {/* Results List */}
+            <div className="flex-1 overflow-y-auto p-2 flex flex-col gap-1">
+              {commandItems.length > 0 ? (
+                commandItems.map((item, idx) => {
+                  const isActive = idx === activeCmdIndex;
+                  return (
+                    <button
+                      key={item.id}
+                      onClick={() => executeCommand(item)}
+                      onMouseEnter={() => setActiveCmdIndex(idx)}
+                      className={`w-full flex items-center justify-between p-3 rounded-xl transition-all text-left ${
+                        isActive 
+                          ? 'bg-zpje-brand/10 text-zpje-brand font-medium' 
+                          : 'bg-transparent text-text-main hover:bg-sidebar-hover/40'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        {item.type === 'app' && item.appObject ? (
+                          <div className={`p-1.5 rounded bg-sidebar-hover ${isActive ? 'text-zpje-brand' : 'text-text-sec'}`}>
+                            {React.createElement(item.appObject.icon, { className: 'w-4 h-4' })}
+                          </div>
+                        ) : (
+                          <div className={`p-1.5 rounded bg-sidebar-hover ${isActive ? 'text-zpje-brand' : 'text-text-sec'}`}>
+                            {item.id.includes('theme') && <Sun className="w-4 h-4" />}
+                            {item.id.includes('home') && <Laptop className="w-4 h-4" />}
+                            {item.id.includes('admin') && <Settings className="w-4 h-4" />}
+                            {item.id.includes('logout') && <LogOut className="w-4 h-4" />}
+                          </div>
+                        )}
+                        <div className="truncate">
+                          <div className={`text-sm ${isActive ? 'text-zpje-brand' : 'text-title'}`}>
+                            {highlightMatch(item.name, cmdQuery)}
+                          </div>
+                          <div className="text-xs text-text-sec truncate">
+                            {highlightMatch(item.description, cmdQuery)}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1.5 text-xs text-text-sec font-mono shrink-0 pl-3">
+                        {item.type === 'app' ? (
+                          <>
+                            <span>跳转</span>
+                            <ArrowRight className="w-3.5 h-3.5" />
+                          </>
+                        ) : (
+                          <span>执行</span>
+                        )}
+                      </div>
+                    </button>
+                  );
+                })
+              ) : (
+                <div className="p-8 text-center text-text-sec text-xs italic">
+                  未匹配到子系统或可用指令。
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* System Warning Modal Dialogue */}
       {activeAlertApp && (
@@ -577,7 +924,10 @@ export default function Dashboard({ userId, initialApps, departments, isAdmin, u
                     href={activeAlertApp.url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    onClick={() => setActiveAlertApp(null)}
+                    onClick={() => {
+                      recordAccess(activeAlertApp.id);
+                      setActiveAlertApp(null);
+                    }}
                     className="px-4 py-2 rounded-full bg-title text-card-surface hover:opacity-90 transition-colors text-xs font-bold flex items-center gap-1"
                   >
                     <span>强制访问 (管理员)</span>

@@ -16,7 +16,14 @@ import {
   Activity, 
   Leaf, 
   Clock, 
-  Hammer 
+  Hammer,
+  BarChart3,
+  Users,
+  MousePointerClick,
+  Calendar,
+  Layers,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 
 interface DBApp {
@@ -47,9 +54,23 @@ interface UnitOption {
   departments: DeptOption[];
 }
 
+interface AccessLog {
+  id: string;
+  loginName: string;
+  appId: string;
+  ip: string | null;
+  userAgent: string | null;
+  timestamp: string;
+  app: {
+    name: string;
+    key: string;
+  };
+}
+
 interface AdminAppRegistryProps {
   initialApps: DBApp[];
   departmentsTree: UnitOption[];
+  accessLogs: AccessLog[];
 }
 
 const ICON_PRESETS = [
@@ -63,11 +84,21 @@ const ICON_PRESETS = [
   'Hammer'
 ];
 
-export default function AdminAppRegistry({ initialApps, departmentsTree }: AdminAppRegistryProps) {
+export default function AdminAppRegistry({ initialApps, departmentsTree, accessLogs }: AdminAppRegistryProps) {
   const [apps, setApps] = useState<DBApp[]>(initialApps);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingApp, setEditingApp] = useState<DBApp | null>(null);
   const [isDeleting, setIsDeleting] = useState<string | null>(null);
+
+  // Tab State
+  const [activeTab, setActiveTab] = useState<'apps' | 'stats'>('apps');
+
+  // Time Range Filter for stats
+  const [timeFilter, setTimeFilter] = useState<'24h' | '7d' | '30d' | 'all'>('all');
+
+  // Stats Log Pagination
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 15;
 
   // Form State
   const [key, setKey] = useState('');
@@ -138,14 +169,12 @@ export default function AdminAppRegistry({ initialApps, departmentsTree }: Admin
 
       let res;
       if (editingApp) {
-        // Edit mode
         res = await fetch(`/api/admin/apps/${editingApp.id}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
         });
       } else {
-        // Create mode
         res = await fetch('/api/admin/apps', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -158,7 +187,6 @@ export default function AdminAppRegistry({ initialApps, departmentsTree }: Admin
         throw new Error(data.error || '保存失败');
       }
 
-      // Refresh list
       const listRes = await fetch('/api/admin/apps');
       if (listRes.ok) {
         const freshApps = await listRes.json();
@@ -192,20 +220,88 @@ export default function AdminAppRegistry({ initialApps, departmentsTree }: Admin
     }
   };
 
+  // Filter logs by selected time filter
+  const getFilteredLogs = () => {
+    if (timeFilter === 'all') return accessLogs;
+    const now = new Date();
+    const filterMs = 
+      timeFilter === '24h' ? 24 * 60 * 60 * 1000 :
+      timeFilter === '7d' ? 7 * 24 * 60 * 60 * 1000 :
+      30 * 24 * 60 * 60 * 1000;
+    return accessLogs.filter(log => {
+      const logDate = new Date(log.timestamp);
+      return now.getTime() - logDate.getTime() <= filterMs;
+    });
+  };
+
+  const filteredLogs = getFilteredLogs();
+
+  // Aggregate stats per application
+  const appVisitsMap: Record<string, number> = {};
+  filteredLogs.forEach(log => {
+    const appName = log.app?.name || '未知系统';
+    appVisitsMap[appName] = (appVisitsMap[appName] || 0) + 1;
+  });
+
+  const rankList = Object.entries(appVisitsMap)
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => b.count - a.count);
+
+  const maxCount = rankList[0]?.count || 1;
+  const totalVisits = filteredLogs.length;
+  const activeUsersCount = new Set(filteredLogs.map(l => l.loginName)).size;
+  const topApp = rankList[0]?.name || '无';
+
+  // Stats Pagination
+  const totalPages = Math.ceil(filteredLogs.length / itemsPerPage);
+  const paginatedLogs = filteredLogs.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+
+  const handlePageChange = (pageNum: number) => {
+    if (pageNum >= 1 && pageNum <= totalPages) {
+      setCurrentPage(pageNum);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-canvas text-text-main font-sans transition-colors duration-200">
       {/* Header */}
       <header className="sticky top-0 z-40 bg-card-surface border-b border-card-border shadow-sm transition-colors duration-200">
         <div className="max-w-[1800px] w-full mx-auto px-6 md:px-12 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            {/* Logo image in admin header too */}
             <div className="relative flex items-center justify-center w-8 h-8 rounded bg-white overflow-hidden border border-card-border">
               <img src="/logo_zpje.jpg" alt="建安万维" className="w-full h-full object-cover" />
             </div>
             <span className="text-lg font-bold tracking-tight text-title">建安万维 管理后台</span>
-            <span className="text-xs px-2 py-0.5 rounded bg-sidebar-hover text-text-sec font-medium">应用注册中心</span>
+            <span className="text-xs px-2 py-0.5 rounded bg-sidebar-hover text-text-sec font-medium">系统配置与统计</span>
           </div>
           <div className="flex items-center gap-3">
+            {/* Tab switchers in header */}
+            <div className="flex bg-sidebar-hover/40 p-1 rounded-full border border-card-border">
+              <button
+                onClick={() => setActiveTab('apps')}
+                className={`px-4 py-1 rounded-full text-xs font-semibold transition-all ${
+                  activeTab === 'apps' 
+                    ? 'bg-card-surface text-title shadow-sm border border-card-border' 
+                    : 'text-text-sec hover:text-title'
+                }`}
+              >
+                应用管理
+              </button>
+              <button
+                onClick={() => {
+                  setActiveTab('stats');
+                  setCurrentPage(1);
+                }}
+                className={`px-4 py-1 rounded-full text-xs font-semibold transition-all ${
+                  activeTab === 'stats' 
+                    ? 'bg-card-surface text-title shadow-sm border border-card-border' 
+                    : 'text-text-sec hover:text-title'
+                }`}
+              >
+                访问统计
+              </button>
+            </div>
+
             <a 
               href="/" 
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-input-border bg-card-surface hover:bg-sidebar-hover transition-colors text-sm font-medium text-text-sec hover:text-title"
@@ -213,107 +309,112 @@ export default function AdminAppRegistry({ initialApps, departmentsTree }: Admin
               <Home className="w-4 h-4" />
               <span>返回门户</span>
             </a>
-            <button
-              onClick={openAddModal}
-              className="flex items-center gap-1 px-4 py-1.5 rounded-full bg-title text-card-surface hover:opacity-90 transition-colors text-sm font-medium"
-            >
-              <Plus className="w-4 h-4" />
-              <span>新增应用</span>
-            </button>
+            {activeTab === 'apps' && (
+              <button
+                onClick={openAddModal}
+                className="flex items-center gap-1 px-4 py-1.5 rounded-full bg-title text-card-surface hover:opacity-90 transition-colors text-sm font-medium"
+              >
+                <Plus className="w-4 h-4" />
+                <span>新增应用</span>
+              </button>
+            )}
           </div>
         </div>
       </header>
 
       {/* Main Container */}
-      <main className="max-w-[1800px] w-full mx-auto px-6 md:px-12 py-10 flex flex-col gap-6">
-        <div className="flex flex-col gap-1.5">
-          <h1 className="text-2xl font-bold tracking-tight text-title">应用注册中心</h1>
-          <p className="text-sm text-text-sec">动态维护系统卡片，配置所属部门、分类、探活状态及维护状态。</p>
-        </div>
+      <main className="max-w-[1800px] w-full mx-auto px-6 md:px-12 py-10 flex flex-col gap-8">
+        
+        {/* Tab 1: Apps Management */}
+        {activeTab === 'apps' ? (
+          <>
+            <div className="flex flex-col gap-1.5">
+              <h1 className="text-2xl font-bold tracking-tight text-title">应用注册中心</h1>
+              <p className="text-sm text-text-sec">动态维护系统卡片，配置部门映射分类、健康检查探活状态及维护状态。</p>
+            </div>
 
-        {/* Apps List Table */}
-        <div className="bg-card-surface rounded-lg border border-card-border overflow-hidden shadow-sm transition-colors duration-200">
-          <table className="w-full text-left border-collapse text-sm">
-            <thead>
-              <tr className="bg-sidebar-hover/40 border-b border-card-border text-text-sec font-medium">
-                <th className="p-4 w-12 text-center">排序</th>
-                <th className="p-4">应用名称 / 键标识</th>
-                <th className="p-4">入口 URL / 分类</th>
-                <th className="p-4">所属部门</th>
-                <th className="p-4 w-32 text-center">状态</th>
-                <th className="p-4 w-28 text-right">操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              {apps.length > 0 ? (
-                apps.map((app) => (
-                  <tr key={app.id} className="border-b border-card-border hover:bg-sidebar-hover/20 transition-colors">
-                    <td className="p-4 text-center font-mono text-text-sec/80">{app.sortOrder}</td>
-                    <td className="p-4">
-                      <div className="flex items-center gap-2.5">
-                        <div className="p-2 rounded bg-sidebar-hover text-text-sec">
-                          {app.icon === 'Zap' && <Zap className="w-4 h-4" />}
-                          {app.icon === 'Calculator' && <Calculator className="w-4 h-4" />}
-                          {app.icon === 'LayoutDashboard' && <LayoutDashboard className="w-4 h-4" />}
-                          {app.icon === 'FileText' && <FileText className="w-4 h-4" />}
-                          {app.icon === 'Activity' && <Activity className="w-4 h-4" />}
-                          {app.icon === 'Leaf' && <Leaf className="w-4 h-4" />}
-                          {app.icon === 'Clock' && <Clock className="w-4 h-4" />}
-                          {app.icon === 'Hammer' && <Hammer className="w-4 h-4" />}
-                          {!ICON_PRESETS.includes(app.icon || '') && <LayoutDashboard className="w-4 h-4" />}
-                        </div>
-                        <div>
-                          <div className="font-semibold text-title">{app.name}</div>
-                          <div className="text-xs font-mono text-text-sec">{app.key}</div>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="p-4">
-                      <div className="truncate max-w-[240px] text-text-sec font-mono text-xs">{app.url}</div>
-                      <div className="text-xs text-text-sec/80 mt-0.5">{app.category}</div>
-                    </td>
-                    <td className="p-4">
-                      {app.mainDept ? (
-                        <span className="px-2.5 py-1 rounded bg-canvas border border-card-border text-xs font-medium text-text-main">
-                          {app.mainDept.name}
-                        </span>
-                      ) : (
-                        <span className="text-xs text-text-sec italic">未分类</span>
-                      )}
-                    </td>
-                    <td className="p-4 text-center">
-                      <div className="flex flex-col items-center gap-1.5">
-                        {app.isMaintenance ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-500/10 text-amber-600 border border-amber-500/20 text-xs font-medium">
-                            <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
-                            维护中
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 border border-emerald-500/20 text-xs font-medium">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                            正常
-                          </span>
-                        )}
-                      </div>
-                    </td>
-                    <td className="p-4 text-right">
-                      <div className="flex items-center justify-end gap-1">
-                        <button
-                          onClick={() => openEditModal(app)}
-                          className="p-1.5 rounded hover:bg-sidebar-hover text-text-sec hover:text-title transition-colors"
-                          title="编辑"
-                        >
-                          <Edit className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => {
-                            if (confirm(`确定要删除应用 “${app.name}” 吗？`)) {
-                              handleDelete(app.id);
-                            }
-                          }}
-                          disabled={isDeleting === app.id}
-                          className="p-1.5 rounded hover:bg-red-500/10 text-red-500 hover:text-red-600 transition-colors disabled:opacity-50"
-                          title="删除"
+            <div className="bg-card-surface rounded-lg border border-card-border overflow-hidden shadow-sm transition-colors duration-200">
+              <table className="w-full text-left border-collapse text-sm">
+                <thead>
+                  <tr className="bg-sidebar-hover/40 border-b border-card-border text-text-sec font-medium">
+                    <th className="p-4 w-12 text-center">排序</th>
+                    <th className="p-4">应用名称 / 键标识</th>
+                    <th className="p-4">入口 URL / 分类</th>
+                    <th className="p-4">所属部门</th>
+                    <th className="p-4 w-32 text-center">状态</th>
+                    <th className="p-4 w-28 text-right">操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {apps.length > 0 ? (
+                    apps.map((app) => (
+                      <tr key={app.id} className="border-b border-card-border hover:bg-sidebar-hover/20 transition-colors">
+                        <td className="p-4 text-center font-mono text-text-sec/80">{app.sortOrder}</td>
+                        <td className="p-4">
+                          <div className="flex items-center gap-2.5">
+                            <div className="p-2 rounded bg-sidebar-hover text-text-sec">
+                              {app.icon === 'Zap' && <Zap className="w-4 h-4" />}
+                              {app.icon === 'Calculator' && <Calculator className="w-4 h-4" />}
+                              {app.icon === 'LayoutDashboard' && <LayoutDashboard className="w-4 h-4" />}
+                              {app.icon === 'FileText' && <FileText className="w-4 h-4" />}
+                              {app.icon === 'Activity' && <Activity className="w-4 h-4" />}
+                              {app.icon === 'Leaf' && <Leaf className="w-4 h-4" />}
+                              {app.icon === 'Clock' && <Clock className="w-4 h-4" />}
+                              {app.icon === 'Hammer' && <Hammer className="w-4 h-4" />}
+                              {!ICON_PRESETS.includes(app.icon || '') && <LayoutDashboard className="w-4 h-4" />}
+                            </div>
+                            <div>
+                              <div className="font-semibold text-title">{app.name}</div>
+                              <div className="text-xs font-mono text-text-sec">{app.key}</div>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="p-4">
+                          <div className="truncate max-w-[240px] text-text-sec font-mono text-xs">{app.url}</div>
+                          <div className="text-xs text-text-sec/80 mt-0.5">{app.category}</div>
+                        </td>
+                        <td className="p-4">
+                          {app.mainDept ? (
+                            <span className="px-2.5 py-1 rounded bg-canvas border border-card-border text-xs font-medium text-text-main">
+                              {app.mainDept.name}
+                            </span>
+                          ) : (
+                            <span className="text-xs text-text-sec italic">未分类</span>
+                          )}
+                        </td>
+                        <td className="p-4 text-center">
+                          <div className="flex flex-col items-center gap-1.5">
+                            {app.isMaintenance ? (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-500/10 text-amber-600 border border-amber-500/20 text-xs font-medium">
+                                <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                                维护中
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 border border-emerald-500/20 text-xs font-medium">
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                                正常
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="p-4 text-right">
+                          <div className="flex items-center justify-end gap-1">
+                            <button
+                              onClick={() => openEditModal(app)}
+                              className="p-1.5 rounded hover:bg-sidebar-hover text-text-sec hover:text-title transition-colors"
+                              title="编辑"
+                            >
+                              <Edit className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => {
+                                if (confirm(`确定要删除应用 “${app.name}” 吗？`)) {
+                                  handleDelete(app.id);
+                                }
+                              }}
+                              disabled={isDeleting === app.id}
+                              className="p-1.5 rounded hover:bg-red-500/10 text-red-500 hover:text-red-600 transition-colors disabled:opacity-50"
+                              title="删除"
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
@@ -331,6 +432,182 @@ export default function AdminAppRegistry({ initialApps, departmentsTree }: Admin
             </tbody>
           </table>
         </div>
+          </>
+        ) : (
+          /* Tab 2: Access stats and audits */
+          <>
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+              <div className="flex flex-col gap-1.5">
+                <h1 className="text-2xl font-bold tracking-tight text-title">系统访问统计</h1>
+                <p className="text-sm text-text-sec">审计用户点击访问日志，分析子系统活跃热度和安全访问量。</p>
+              </div>
+
+              {/* Time filters */}
+              <div className="flex bg-sidebar-hover/40 p-1 rounded-lg border border-card-border shrink-0">
+                {(['24h', '7d', '30d', 'all'] as const).map(f => (
+                  <button
+                    key={f}
+                    onClick={() => {
+                      setTimeFilter(f);
+                      setCurrentPage(1);
+                    }}
+                    className={`px-3 py-1 rounded text-xs font-semibold transition-all ${
+                      timeFilter === f 
+                        ? 'bg-card-surface text-title shadow-sm' 
+                        : 'text-text-sec hover:text-title'
+                    }`}
+                  >
+                    {f === '24h' ? '近 24 小时' : f === '7d' ? '近 7 天' : f === '30d' ? '近 30 天' : '全部'}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Metric Summary Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="bg-card-surface border border-card-border p-5 rounded-2xl flex items-center gap-4 shadow-sm">
+                <div className="p-3 bg-zpje-brand/10 text-zpje-brand rounded-xl">
+                  <MousePointerClick className="w-6 h-6" />
+                </div>
+                <div>
+                  <span className="text-xs text-text-sec">系统总访问点击量</span>
+                  <h3 className="text-2xl font-extrabold text-title mt-0.5 font-mono">{totalVisits}</h3>
+                </div>
+              </div>
+              <div className="bg-card-surface border border-card-border p-5 rounded-2xl flex items-center gap-4 shadow-sm">
+                <div className="p-3 bg-emerald-500/10 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400 rounded-xl">
+                  <Users className="w-6 h-6" />
+                </div>
+                <div>
+                  <span className="text-xs text-text-sec">活跃访问账号数</span>
+                  <h3 className="text-2xl font-extrabold text-title mt-0.5 font-mono">{activeUsersCount}</h3>
+                </div>
+              </div>
+              <div className="bg-card-surface border border-card-border p-5 rounded-2xl flex items-center gap-4 shadow-sm">
+                <div className="p-3 bg-amber-500/10 text-amber-600 dark:bg-amber-500/20 dark:text-amber-400 rounded-xl">
+                  <Layers className="w-6 h-6" />
+                </div>
+                <div>
+                  <span className="text-xs text-text-sec">最热门访问子系统</span>
+                  <h3 className="text-lg font-bold text-title mt-1 truncate max-w-[200px]" title={topApp}>{topApp}</h3>
+                </div>
+              </div>
+            </div>
+
+            {/* Split layout: Rank bar chart + Logs table */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start w-full">
+              
+              {/* CSS Progress Rank Chart */}
+              <div className="bg-card-surface border border-card-border p-5 rounded-2xl flex flex-col gap-6 shadow-sm">
+                <div className="flex items-center gap-2 border-b border-card-border pb-3">
+                  <BarChart3 className="w-4 h-4 text-zpje-brand" />
+                  <h4 className="font-bold text-title text-sm">系统访问排行</h4>
+                </div>
+                
+                <div className="flex flex-col gap-4">
+                  {rankList.length > 0 ? (
+                    rankList.map((item, idx) => {
+                      const pct = Math.round((item.count / maxCount) * 100);
+                      return (
+                        <div key={item.name} className="flex flex-col gap-1.5">
+                          <div className="flex items-center justify-between text-xs font-semibold">
+                            <span className="text-title truncate max-w-[200px] flex gap-1.5">
+                              <span className="text-text-sec font-mono">#{idx + 1}</span>
+                              {item.name}
+                            </span>
+                            <span className="text-text-sec font-mono">{item.count} 次</span>
+                          </div>
+                          <div className="w-full bg-sidebar-hover h-2.5 rounded-full overflow-hidden">
+                            <div 
+                              className="bg-zpje-brand h-full rounded-full transition-all duration-500" 
+                              style={{ width: `${pct}%` }}
+                            />
+                          </div>
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <div className="text-center py-10 text-xs text-text-sec italic">
+                      暂无访问点击数据。
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Log Records Table */}
+              <div className="lg:col-span-2 bg-card-surface border border-card-border rounded-2xl overflow-hidden shadow-sm flex flex-col justify-between min-h-[500px]">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse text-xs">
+                    <thead>
+                      <tr className="bg-sidebar-hover/40 border-b border-card-border text-text-sec font-semibold">
+                        <th className="p-3 w-40">时间</th>
+                        <th className="p-3 w-32">用户账号</th>
+                        <th className="p-3 w-40">访问系统</th>
+                        <th className="p-3 w-32">来源 IP</th>
+                        <th className="p-3">浏览器终端 (UserAgent)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {paginatedLogs.length > 0 ? (
+                        paginatedLogs.map((log) => (
+                          <tr key={log.id} className="border-b border-card-border hover:bg-sidebar-hover/10 transition-colors">
+                            <td className="p-3 text-text-sec font-mono whitespace-nowrap">
+                              {new Date(log.timestamp).toLocaleString('zh-CN', { hour12: false })}
+                            </td>
+                            <td className="p-3 font-semibold text-title">{log.loginName}</td>
+                            <td className="p-3">
+                              <div className="font-semibold text-title">{log.app?.name}</div>
+                              <div className="text-[10px] font-mono text-text-sec">{log.app?.key}</div>
+                            </td>
+                            <td className="p-3 text-text-sec font-mono">{log.ip || '未知'}</td>
+                            <td className="p-3 text-text-sec max-w-xs truncate" title={log.userAgent || ''}>
+                              {log.userAgent || '-'}
+                            </td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr>
+                          <td colSpan={5} className="p-12 text-center text-text-sec italic bg-card-surface">
+                            筛选期间内暂无审计日志。
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Pagination Controls */}
+                {totalPages > 1 && (
+                  <div className="p-3 border-t border-card-border bg-sidebar-hover/20 flex items-center justify-between text-xs">
+                    <span className="text-text-sec">
+                      显示第 {(currentPage - 1) * itemsPerPage + 1} 到 {Math.min(currentPage * itemsPerPage, filteredLogs.length)} 条，共 {filteredLogs.length} 条记录
+                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        onClick={() => handlePageChange(currentPage - 1)}
+                        disabled={currentPage === 1}
+                        className="p-1.5 rounded border border-input-border bg-card-surface hover:bg-sidebar-hover disabled:opacity-40 disabled:cursor-not-allowed text-title"
+                      >
+                        <ChevronLeft className="w-4 h-4" />
+                      </button>
+                      <span className="px-3 font-bold text-title">
+                        {currentPage} / {totalPages}
+                      </span>
+                      <button
+                        onClick={() => handlePageChange(currentPage + 1)}
+                        disabled={currentPage === totalPages}
+                        className="p-1.5 rounded border border-input-border bg-card-surface hover:bg-sidebar-hover disabled:opacity-40 disabled:cursor-not-allowed text-title"
+                      >
+                        <ChevronRight className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+            </div>
+          </>
+        )}
       </main>
 
       {/* App Form Modal */}
@@ -360,7 +637,7 @@ export default function AdminAppRegistry({ initialApps, departmentsTree }: Admin
                   </div>
                 )}
 
-                {/* Key (Only editable on create) */}
+                {/* Key */}
                 <div className="flex flex-col gap-1.5">
                   <label className="text-xs font-bold text-text-sec uppercase tracking-wider">
                     键标识 (Unique Key) <span className="text-red-500">*</span>
