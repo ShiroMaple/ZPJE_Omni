@@ -26,7 +26,7 @@ export default function Sidebar({
   return (
     <aside className="w-full lg:w-64 shrink-0 flex flex-col gap-6">
       <div className="flex flex-col gap-2">
-        <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest px-3">
+        <h3 className="text-xs font-bold text-text-sec uppercase tracking-widest px-3">
           部门筛选
         </h3>
         
@@ -37,17 +37,15 @@ export default function Sidebar({
             onClick={() => onSelectDept(null)}
             className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl border text-sm font-semibold transition-all duration-200 text-left ${
               activeDeptId === null
-                ? 'bg-white border-[#e0e1e6] text-black shadow-sm'
-                : 'bg-transparent border-transparent text-slate-400 hover:text-white hover:bg-white/5'
+                ? 'bg-card-surface border-card-border text-title shadow-sm'
+                : 'bg-transparent border-transparent text-text-sec hover:text-title hover:bg-sidebar-hover'
             }`}
           >
             <div className="flex items-center gap-2.5">
               <LayoutGrid className="w-4 h-4 shrink-0" />
               <span>全部应用</span>
             </div>
-            <span className={`text-xs px-2 py-0.5 rounded-full font-mono ${
-              activeDeptId === null ? 'bg-black/5 text-slate-600' : 'bg-white/5 text-slate-400'
-            }`}>
+            <span className="text-xs px-2 py-0.5 rounded-full font-mono bg-sidebar-hover text-text-sec">
               {totalAppsCount}
             </span>
           </button>
@@ -63,17 +61,15 @@ export default function Sidebar({
                 onClick={() => onSelectDept(dept.id)}
                 className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl border text-sm font-semibold transition-all duration-200 text-left ${
                   isActive
-                    ? 'bg-white border-[#e0e1e6] text-black shadow-sm'
-                    : 'bg-transparent border-transparent text-slate-400 hover:text-white hover:bg-white/5'
+                    ? 'bg-card-surface border-card-border text-title shadow-sm'
+                    : 'bg-transparent border-transparent text-text-sec hover:text-title hover:bg-sidebar-hover'
                 }`}
               >
                 <div className="flex items-center gap-2.5 min-w-0">
                   <Building2 className="w-4 h-4 shrink-0" />
                   <span className="truncate">{dept.name}</span>
                 </div>
-                <span className={`text-xs px-2 py-0.5 rounded-full font-mono shrink-0 ml-2 ${
-                  isActive ? 'bg-black/5 text-slate-600' : 'bg-white/5 text-slate-400'
-                }`}>
+                <span className="text-xs px-2 py-0.5 rounded-full font-mono shrink-0 ml-2 bg-sidebar-hover text-text-sec">
                   {count}
                 </span>
               </button>

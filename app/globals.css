@@ -1,26 +1,50 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+:root, [data-theme="light"] {
+  --background: #f0f0f3;
+  --foreground: #1c2024;
+  --card-bg: #ffffff;
+  --card-border: #e0e1e6;
+  --text-primary: #000000;
+  --text-secondary: #60646c;
+  --input-border: #d9d9e0;
+  --nav-bg: rgba(255, 255, 255, 0.40);
+  --sidebar-hover: rgba(0, 0, 0, 0.04);
+  --zpje-brand: #004b97;       /* 浙平建安 Logo 提取深蓝色 */
+  --zpje-accent: #e0520d;      /* 浙平建安 Logo 提取亮橘色 */
+}
+
+[data-theme="dark"] {
+  --background: #07070a;
+  --foreground: #b0b4ba;
+  --card-bg: #0f1015;
+  --card-border: #2c2f35;
+  --text-primary: #ffffff;
+  --text-secondary: #80848c;
+  --input-border: #3a3e45;
+  --nav-bg: rgba(13, 13, 18, 0.45);
+  --sidebar-hover: rgba(255, 255, 255, 0.05);
+  --zpje-brand: #3b82f6;       /* 暗色模式下使用亮蓝色增强对比度 */
+  --zpje-accent: #f97316;      /* 暗色模式下使用亮橘色增强对比度 */
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --color-canvas: var(--background);
+  --color-text-main: var(--foreground);
+  --color-card-surface: var(--card-bg);
+  --color-card-border: var(--card-border);
+  --color-title: var(--text-primary);
+  --color-text-sec: var(--text-secondary);
+  --color-input-border: var(--input-border);
+  --color-nav-bg: var(--nav-bg);
+  --color-sidebar-hover: var(--sidebar-hover);
+  --color-zpje-brand: var(--zpje-brand);
+  --color-zpje-accent: var(--zpje-accent);
 }
 
 body {
-  background: var(--background);
+  background-color: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: 'Inter', -apple-system, sans-serif;
+  transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
 }

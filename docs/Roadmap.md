@@ -105,21 +105,21 @@
 
 > 支持浅色/深色两套主题，默认浅色模式。浅色模式严格遵循 [DESIGN_Expo.md](file:///c:/Users/gaoft/Documents/CodeSpace/Omni/docs/DESIGN_Expo.md) 规范。
 
-- [ ] **浅色主题（默认）** — 严格对齐 Expo 设计系统
-  - [ ] 页面画布使用 Cloud Gray (`#f0f0f3`)，卡片/容器使用 Pure White (`#ffffff`)
-  - [ ] 标题使用 Expo Black (`#000000`)，正文使用 Near Black (`#1c2024`)，辅助文字使用 Slate Gray (`#60646c`)
-  - [ ] 边框使用 Border Lavender (`#e0e1e6`)，交互边框使用 Input Border (`#d9d9e0`)
-  - [ ] 阴影遵循 Expo 低调层级（Whisper / Standard Elevation）
-  - [ ] 圆角遵循 Expo 药丸体系：按钮 6px、卡片 8px、图片容器 24px、主 CTA 9999px
-  - [ ] 字体统一使用 Inter（400-900 全权重），标题极致负字距（-1.6px ~ -3px at 64px）
-- [ ] **深色主题** — 基于 Expo 体系的暗色衍生
-  - [ ] 画布使用 Widget Dark (`#1a1a1a`)，卡片使用 Banner Dark (`#171717`) 或 `#222`
-  - [ ] 文字使用 Pure White / Silver (`#b0b4ba`) 等亮色层级
-  - [ ] 边框使用 Dark Slate (`#363a3f`)，阴影适当加深
-- [ ] 建立 CSS 变量体系，分 `[data-theme="light"]` / `[data-theme="dark"]` 两套令牌
-- [ ] 实现 `ThemeToggle` 组件（Header 导航栏中放置明暗切换图标按钮）
-- [ ] 用户偏好持久化至 `localStorage`，默认值为 `light`
-- [ ] 全面适配 Dashboard、Sidebar、卡片、Header、Command Palette 等组件的双主题样式
+- [x] **浅色主题（默认）** — 严格对齐 Expo 设计系统
+  - [x] 页面画布使用 Cloud Gray (`#f0f0f3`)，卡片/容器使用 Pure White (`#ffffff`)
+  - [x] 标题使用 Expo Black (`#000000`)，正文使用 Near Black (`#1c2024`)，辅助文字使用 Slate Gray (`#60646c`)
+  - [x] 边框使用 Border Lavender (`#e0e1e6`)，交互边框使用 Input Border (`#d9d9e0`)
+  - [x] 阴影遵循 Expo 低调层级（Whisper / Standard Elevation）
+  - [x] 圆角遵循 Expo 药丸体系：按钮 6px、卡片 8px、图片容器 24px、主 CTA 9999px
+  - [x] 字体统一使用 Inter（400-900 全权重），标题极致负字距（-1.6px ~ -3px at 64px）
+- [x] **深色主题** — 基于 Expo 体系的暗色衍生
+  - [x] 画布使用 Widget Dark (`#1a1a1a`)，卡片使用 Banner Dark (`#171717`) 或 `#222`
+  - [x] 文字使用 Pure White / Silver (`#b0b4ba`) 等亮色层级
+  - [x] 边框使用 Dark Slate (`#363a3f`)，阴影适当加深
+- [x] 建立 CSS 变量体系，分 `[data-theme="light"]` / `[data-theme="dark"]` 两套令牌
+- [x] 实现 `ThemeToggle` 组件（Header 导航栏中放置明暗切换图标按钮）
+- [x] 用户偏好持久化至 `localStorage`，默认值为 `light`
+- [x] 全面适配 Dashboard、Sidebar、卡片、Header、Command Palette 等组件的双主题样式
 
 ---
 
@@ -240,7 +240,7 @@
   ├── 1.3 子应用健康探活                        ██████████ 100% (已实现并行 GET 探测 API 与 Linux Cron 定时任务)
   ├── 1.4 应用维护模式                          ██████████ 100% (已在管理后台实现开关并增加了前端灰度/拦截警告框)
   ├── 1.5 完整单点登出 (SLO)                    ██████████ 100% (已完成登出注销按钮与 30s session_active 超时自动登出)
-  └── 1.6 明暗模式切换                          ░░░░░░░░░░ 0%
+  └── 1.6 明暗模式切换                          ██████████ 100% (建立 CSS 变量体系与 React 状态切换，适配主屏与后台)
 
 【第二阶段：体验升级】
   ├── 2.1 常用应用收藏 + 最近访问记录            ░░░░░░░░░░ 0%

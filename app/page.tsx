@@ -1,4 +1,4 @@
-// app/page.tsx
+import type { Metadata } from 'next';
 import { headers } from 'next/headers';
 import Dashboard from './Dashboard';
 import { prisma } from '../lib/prisma';
@@ -6,10 +6,39 @@ import { checkAdmin } from '../lib/auth';
 
 export const dynamic = 'force-dynamic';
 
+export const metadata: Metadata = {
+  title: "建安万维 数字化工作台门户 - 统一数字化应用安全管理平台",
+  description: "建安万维 数字化工作台门户提供企业级子系统单点登录（SSO）安全托管、动态应用分类过滤、健康探活监控与维护模式降级管理。",
+};
+
 export default async function Page() {
   const headersList = await headers();
   const userId = headersList.get('x-user-id') || 'guest';
   const isAdmin = await checkAdmin();
+
+  // Fetch detailed user info if logged in
+  let currentUserInfo = null;
+  if (userId !== 'guest') {
+    const member = await prisma.member.findUnique({
+      where: { loginName: userId },
+      include: {
+        unit: {
+          select: { name: true }
+        },
+        department: {
+          select: { name: true }
+        }
+      }
+    });
+    if (member) {
+      currentUserInfo = {
+        name: member.name,
+        loginName: member.loginName,
+        unitName: member.unit?.name || '未知单位',
+        deptName: member.department?.name || '未知部门',
+      };
+    }
+  }
 
   // Fetch all apps with their associated mainDept details
   const apps = await prisma.app.findMany({
@@ -63,6 +92,7 @@ export default async function Page() {
       initialApps={serializedApps} 
       departments={departments}
       isAdmin={isAdmin}
+      userInfo={currentUserInfo}
     />
   );
 }
