@@ -1,0 +1,98 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+}
+
+// 门节点应用注册模型
+model App {
+  id          String   @id @default(cuid())
+  key         String   @unique // 唯一样本标识，如 "CarbonPlatform"
+  name        String   // 显示名称，如 "能碳管理平台"
+  description String?  @db.Text // 简介/描述
+  url         String   // 访问入口 URL
+  icon        String?  // 图标名称 (如 Lucide 图标名 "Zap", "Activity")
+  category    String   @default("通用应用") // 应用分类：生产管理、质量监控、能源等
+  
+  // 状态与排序控制
+  isMaintenance Boolean @default(false) // 是否开启维护模式
+  sortOrder     Int     @default(0)     // 显示排序权值
+  
+  // 实时健康探活缓存
+  healthStatus  String  @default("HEALTHY") // HEALTHY, UNHEALTHY, UNKNOWN
+  lastCheckedAt DateTime?
+
+  // 所属部门标签外键
+  mainDeptId    String?
+  mainDept      Department? @relation(fields: [mainDeptId], references: [id], onDelete: SetNull)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("apps")
+}
+
+// 组织架构：单位模型
+model Unit {
+  id          String       @id
+  name        String
+  code        String?
+  enabled     Boolean      @default(true)
+  
+  // 关联关系
+  departments Department[]
+  members     Member[]
+
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@map("units")
+}
+
+// 组织架构：部门模型
+model Department {
+  id           String   @id
+  name         String
+  code         String?
+  enabled      Boolean  @default(true)
+  
+  // 关联关系
+  orgAccountId String
+  unit         Unit     @relation(fields: [orgAccountId], references: [id], onDelete: Cascade)
+  parentId     String?  // 父级部门ID
+
+  members      Member[]
+  apps         App[]
+
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+
+  @@map("departments")
+}
+
+// 组织架构：人员模型
+model Member {
+  id              String      @id
+  name            String
+  loginName       String      @unique // 登录账号，单点登录校验的关键映射
+  code            String?     // 人员工号
+  telNumber       String?     // 手机号码
+  emailAddress    String?     // 电子邮件
+  enabled         Boolean     @default(true)
+  isDeleted       Boolean     @default(false)
+
+  // 关联关系
+  orgAccountId    String
+  unit            Unit        @relation(fields: [orgAccountId], references: [id], onDelete: Cascade)
+  
+  orgDepartmentId String?
+  department      Department? @relation(fields: [orgDepartmentId], references: [id], onDelete: SetNull)
+
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  @@map("members")
+}
