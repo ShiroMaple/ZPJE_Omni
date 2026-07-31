@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { 
   Plus, 
   Edit, 
@@ -27,7 +27,7 @@ import {
   Eye,
   EyeOff,
   Shield,
-  Monitor
+  Search
 } from 'lucide-react';
 
 interface DBApp {
@@ -91,12 +91,23 @@ interface WidgetConfig {
   sortOrder: number;
 }
 
+interface AdminMember {
+  id: string;
+  name: string;
+  loginName: string;
+  adminType: 'SYS_ADMIN' | 'OPS_ADMIN' | 'DEPT_ADMIN' | 'NONE';
+  deptName: string;
+  unitName: string;
+}
+
 interface AdminAppRegistryProps {
   initialApps: DBApp[];
   departmentsTree: UnitOption[];
   accessLogs: AccessLog[];
   roles: RoleOption[];
   initialWidgets: WidgetConfig[];
+  isSystemAdmin: boolean;
+  initialAdminMembers: AdminMember[];
 }
 
 const ICON_PRESETS = [
@@ -115,16 +126,19 @@ export default function AdminAppRegistry({
   departmentsTree, 
   accessLogs, 
   roles,
-  initialWidgets 
+  initialWidgets,
+  isSystemAdmin,
+  initialAdminMembers
 }: AdminAppRegistryProps) {
   const [apps, setApps] = useState<DBApp[]>(initialApps);
   const [widgets, setWidgets] = useState<WidgetConfig[]>(initialWidgets);
+  const [adminMembers, setAdminMembers] = useState<AdminMember[]>(initialAdminMembers);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingApp, setEditingApp] = useState<DBApp | null>(null);
   const [isDeleting, setIsDeleting] = useState<string | null>(null);
 
   // Tab State
-  const [activeTab, setActiveTab] = useState<'apps' | 'stats' | 'widgets'>('apps');
+  const [activeTab, setActiveTab] = useState<'apps' | 'stats' | 'widgets' | 'members'>('apps');
 
   // Time Range Filter for stats
   const [timeFilter, setTimeFilter] = useState<'24h' | '7d' | '30d' | 'all'>('all');
@@ -162,6 +176,12 @@ export default function AdminAppRegistry({
   const [widgetError, setWidgetError] = useState('');
   const [widgetSubmitting, setWidgetSubmitting] = useState(false);
   const [isDeletingWidget, setIsDeletingWidget] = useState<string | null>(null);
+
+  // Member Search State
+  const [memberSearch, setMemberSearch] = useState('');
+  const [memberSearchResults, setMemberSearchResults] = useState<any[]>([]);
+  const [memberSearchLoading, setMemberSearchLoading] = useState(false);
+  const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const openAddModal = () => {
     setEditingApp(null);
@@ -405,6 +425,94 @@ export default function AdminAppRegistry({
     }
   };
 
+  // Member Search Actions
+  const triggerMemberSearch = (val: string) => {
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+    
+    if (!val.trim()) {
+      setMemberSearchResults([]);
+      return;
+    }
+
+    setMemberSearchLoading(true);
+    searchTimeoutRef.current = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/admin/members?search=${encodeURIComponent(val)}`);
+        if (res.ok) {
+          const data = await res.json();
+          const adminIds = adminMembers.map(a => a.id);
+          setMemberSearchResults(data.map((m: any) => ({
+            id: m.id,
+            name: m.name,
+            loginName: m.loginName,
+            unitName: m.unit?.name || '无单位',
+            deptName: m.department?.name || '无部门'
+          })).filter((m: any) => !adminIds.includes(m.id)));
+        }
+      } catch (err) {
+        console.error('Search members failed:', err);
+      } finally {
+        setMemberSearchLoading(false);
+      }
+    }, 400);
+  };
+
+  const handleAdminTypeChange = async (
+    memberId: string, 
+    adminType: 'NONE' | 'SYS_ADMIN' | 'OPS_ADMIN' | 'DEPT_ADMIN', 
+    searchMemberObj?: any
+  ) => {
+    try {
+      const res = await fetch('/api/admin/members', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ memberId, adminType })
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || '分配管理员权限失败');
+      }
+
+      if (adminType === 'NONE') {
+        setAdminMembers(prev => prev.filter(a => a.id !== memberId));
+      } else {
+        const exists = adminMembers.some(a => a.id === memberId);
+        if (exists) {
+          setAdminMembers(prev => prev.map(a => a.id === memberId ? { ...a, adminType } : a));
+        } else if (searchMemberObj) {
+          const newAdmin: AdminMember = {
+            id: searchMemberObj.id,
+            name: searchMemberObj.name,
+            loginName: searchMemberObj.loginName,
+            adminType,
+            deptName: searchMemberObj.deptName,
+            unitName: searchMemberObj.unitName
+          };
+          setAdminMembers(prev => [...prev, newAdmin].sort((a, b) => a.name.localeCompare(b.name)));
+          setMemberSearchResults(prev => prev.filter(m => m.id !== memberId));
+        } else {
+          const listRes = await fetch('/api/admin/members?type=admins');
+          if (listRes.ok) {
+            const data = await listRes.json();
+            setAdminMembers(data.map((m: any) => ({
+              id: m.id,
+              name: m.name,
+              loginName: m.loginName,
+              adminType: m.adminType,
+              deptName: m.department?.name || '无部门',
+              unitName: m.unit?.name || '无单位'
+            })));
+          }
+        }
+      }
+    } catch (err: any) {
+      alert(err.message);
+    }
+  };
+
   // Filter logs by selected time filter
   const getFilteredLogs = () => {
     if (timeFilter === 'all') return accessLogs;
@@ -485,6 +593,22 @@ export default function AdminAppRegistry({
               >
                 Widget 配置
               </button>
+              {isSystemAdmin && (
+                <button
+                  onClick={() => {
+                    setActiveTab('members');
+                    setMemberSearch('');
+                    setMemberSearchResults([]);
+                  }}
+                  className={`px-4 py-1 rounded-full text-xs font-semibold transition-all ${
+                    activeTab === 'members' 
+                      ? 'bg-card-surface text-title shadow-sm border border-card-border' 
+                      : 'text-text-sec hover:text-title'
+                  }`}
+                >
+                  管理员分配
+                </button>
+              )}
               <button
                 onClick={() => {
                   setActiveTab('stats');
@@ -736,7 +860,142 @@ export default function AdminAppRegistry({
           </>
         )}
 
-        {/* Tab 3: Access stats and audits */}
+        {/* Tab 3: Admin Allocation (SYS_ADMIN only) */}
+        {activeTab === 'members' && isSystemAdmin && (
+          <>
+            <div className="flex flex-col gap-1.5">
+              <h1 className="text-2xl font-bold tracking-tight text-title">管理员权限分配</h1>
+              <p className="text-sm text-text-sec">搜索并授权组织内员工成为系统管理员、运维管理员或部门管理员。仅系统管理员拥有此分配权。</p>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start w-full">
+              {/* Search Pane */}
+              <div className="bg-card-surface border border-card-border p-5 rounded-2xl flex flex-col gap-4 shadow-sm">
+                <h4 className="font-bold text-title text-sm border-b border-card-border pb-3 flex items-center gap-2">
+                  <Shield className="w-4 h-4 text-zpje-brand" />
+                  搜索并添加管理员
+                </h4>
+                
+                <div className="flex flex-col gap-3">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-2.5 h-4 w-4 text-text-sec" />
+                    <input
+                      type="text"
+                      placeholder="输入姓名或登录账号搜索..."
+                      value={memberSearch}
+                      onChange={(e) => {
+                        setMemberSearch(e.target.value);
+                        triggerMemberSearch(e.target.value);
+                      }}
+                      className="w-full pl-9 pr-4 py-2 rounded-xl bg-canvas border border-input-border text-title text-xs focus:outline-none focus:ring-1 focus:ring-title"
+                    />
+                  </div>
+
+                  {memberSearchLoading ? (
+                    <div className="text-center py-6 text-xs text-text-sec animate-pulse">正在查找在职员工...</div>
+                  ) : memberSearchResults.length > 0 ? (
+                    <div className="flex flex-col gap-2 max-h-80 overflow-y-auto border border-card-border rounded-xl p-2 bg-sidebar-hover/10">
+                      {memberSearchResults.map(m => (
+                        <div key={m.id} className="p-2 rounded-lg bg-card-surface border border-card-border flex items-center justify-between gap-3 text-xs">
+                          <div className="truncate min-w-0">
+                            <div className="font-bold text-title">{m.name}</div>
+                            <div className="text-[10px] text-text-sec font-mono">@{m.loginName}</div>
+                            <div className="text-[10px] text-text-sec/80 truncate">{m.unitName} - {m.deptName}</div>
+                          </div>
+                          
+                          <select
+                            onChange={(e) => handleAdminTypeChange(m.id, e.target.value as any, m)}
+                            defaultValue="NONE"
+                            className="px-2 py-1 rounded border border-input-border bg-canvas text-title text-[10px] font-semibold focus:outline-none shrink-0"
+                          >
+                            <option value="NONE">普通员工</option>
+                            <option value="SYS_ADMIN">系统管理员</option>
+                            <option value="OPS_ADMIN">运维管理员</option>
+                            <option value="DEPT_ADMIN">部门管理员</option>
+                          </select>
+                        </div>
+                      ))}
+                    </div>
+                  ) : memberSearch.trim() !== '' ? (
+                    <div className="text-center py-6 text-xs text-text-sec italic">未找到匹配的在职员工</div>
+                  ) : (
+                    <div className="text-center py-6 text-[10px] text-text-sec italic">在上方输入字符即可检索 6000+ OA 关联员工</div>
+                  )}
+                </div>
+              </div>
+
+              {/* Administrators Table */}
+              <div className="lg:col-span-2 bg-card-surface border border-card-border rounded-2xl overflow-hidden shadow-sm">
+                <div className="px-5 py-4 border-b border-card-border bg-sidebar-hover/20 flex items-center justify-between">
+                  <h4 className="font-bold text-title text-sm">当前管理员列表 ({adminMembers.length})</h4>
+                </div>
+                
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead>
+                    <tr className="bg-sidebar-hover/40 border-b border-card-border text-text-sec font-semibold">
+                      <th className="p-3">姓名 / 账号</th>
+                      <th className="p-3">所属单位与部门</th>
+                      <th className="p-3 w-44">管理员类型角色</th>
+                      <th className="p-3 w-20 text-right">操作</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {adminMembers.length > 0 ? (
+                      adminMembers.map((admin) => (
+                        <tr key={admin.id} className="border-b border-card-border hover:bg-sidebar-hover/10 transition-colors">
+                          <td className="p-3">
+                            <div className="font-bold text-title">{admin.name}</div>
+                            <div className="text-[10px] font-mono text-text-sec">@{admin.loginName}</div>
+                          </td>
+                          <td className="p-3 text-text-sec">
+                            <div>{admin.unitName}</div>
+                            <div className="text-[10px] mt-0.5">{admin.deptName}</div>
+                          </td>
+                          <td className="p-3">
+                            <select
+                              value={admin.adminType}
+                              onChange={(e) => handleAdminTypeChange(admin.id, e.target.value as any)}
+                              className={`px-3 py-1 rounded-full border text-[10px] font-bold outline-none cursor-pointer ${
+                                admin.adminType === 'SYS_ADMIN' ? 'bg-red-500/10 text-red-500 border-red-500/20' :
+                                admin.adminType === 'OPS_ADMIN' ? 'bg-zpje-brand/10 text-zpje-brand border-zpje-brand/20' :
+                                'bg-amber-500/10 text-amber-500 border-amber-500/20'
+                              }`}
+                            >
+                              <option value="SYS_ADMIN" className="bg-card-surface text-title">系统管理员</option>
+                              <option value="OPS_ADMIN" className="bg-card-surface text-title">运维管理员</option>
+                              <option value="DEPT_ADMIN" className="bg-card-surface text-title">部门管理员</option>
+                              <option value="NONE" className="bg-card-surface text-red-500 font-bold">撤销管理员 (NONE)</option>
+                            </select>
+                          </td>
+                          <td className="p-3 text-right">
+                            <button
+                              onClick={() => {
+                                if (confirm(`确认撤销管理员 “${admin.name}” 的全部特权吗？`)) {
+                                  handleAdminTypeChange(admin.id, 'NONE');
+                                }
+                              }}
+                              className="text-red-500 hover:text-red-600 font-semibold"
+                            >
+                              撤销
+                            </button>
+                          </td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td colSpan={4} className="p-12 text-center text-text-sec italic bg-card-surface">
+                          暂无人工授权的管理员角色。
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* Tab 4: Access stats and audits */}
         {activeTab === 'stats' && (
           <>
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
@@ -917,7 +1176,6 @@ export default function AdminAppRegistry({
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
           <div className="w-full max-w-2xl bg-card-surface rounded-lg border border-card-border shadow-xl overflow-hidden animate-in fade-in zoom-in duration-200 text-text-main">
-            {/* Modal Header */}
             <div className="px-6 py-4 border-b border-card-border flex items-center justify-between bg-sidebar-hover/10">
               <h2 className="text-lg font-bold text-title">
                 {editingApp ? '编辑子应用' : '新增子应用'}
@@ -930,7 +1188,6 @@ export default function AdminAppRegistry({
               </button>
             </div>
 
-            {/* Modal Form */}
             <form onSubmit={handleSubmit}>
               <div className="p-6 flex flex-col gap-4 max-h-[70vh] overflow-y-auto">
                 {errorMessage && (
@@ -941,7 +1198,6 @@ export default function AdminAppRegistry({
                 )}
 
                 <div className="grid grid-cols-2 gap-4">
-                  {/* Key */}
                   <div className="flex flex-col gap-1.5">
                     <label className="text-xs font-bold text-text-sec uppercase tracking-wider">
                       键标识 (Unique Key) <span className="text-red-500">*</span>
@@ -957,7 +1213,6 @@ export default function AdminAppRegistry({
                     />
                   </div>
 
-                  {/* Name */}
                   <div className="flex flex-col gap-1.5">
                     <label className="text-xs font-bold text-text-sec uppercase tracking-wider">
                       应用名称 <span className="text-red-500">*</span>
@@ -973,7 +1228,6 @@ export default function AdminAppRegistry({
                   </div>
                 </div>
 
-                {/* Entrance URL */}
                 <div className="flex flex-col gap-1.5">
                   <label className="text-xs font-bold text-text-sec uppercase tracking-wider">
                     入口 URL <span className="text-red-500">*</span>
@@ -988,7 +1242,6 @@ export default function AdminAppRegistry({
                   />
                 </div>
 
-                {/* Description */}
                 <div className="flex flex-col gap-1.5">
                   <label className="text-xs font-bold text-text-sec uppercase tracking-wider">
                     应用简介
@@ -1002,9 +1255,7 @@ export default function AdminAppRegistry({
                   />
                 </div>
 
-                {/* Grid Fields */}
                 <div className="grid grid-cols-2 gap-4">
-                  {/* Category */}
                   <div className="flex flex-col gap-1.5">
                     <label className="text-xs font-bold text-text-sec uppercase tracking-wider">
                       分类类别
@@ -1018,7 +1269,6 @@ export default function AdminAppRegistry({
                     />
                   </div>
 
-                  {/* Sort Order */}
                   <div className="flex flex-col gap-1.5">
                     <label className="text-xs font-bold text-text-sec uppercase tracking-wider">
                       排序权值 (正整数)
@@ -1032,7 +1282,6 @@ export default function AdminAppRegistry({
                   </div>
                 </div>
 
-                {/* Preset Icon & Associated Dept */}
                 <div className="grid grid-cols-2 gap-4">
                   <div className="flex flex-col gap-1.5">
                     <label className="text-xs font-bold text-text-sec uppercase tracking-wider">
@@ -1075,7 +1324,7 @@ export default function AdminAppRegistry({
                   </div>
                 </div>
 
-                {/* 3.1 RBAC Visibility Permissions Group */}
+                {/* RBAC Visibility Permissions Group */}
                 <div className="border-t border-card-border pt-4 mt-2 flex flex-col gap-3">
                   <div className="flex items-center gap-2 mb-1">
                     <Shield className="w-4 h-4 text-zpje-brand" />
@@ -1097,7 +1346,6 @@ export default function AdminAppRegistry({
 
                   {!visibleToAll && (
                     <div className="grid grid-cols-2 gap-4 border border-card-border rounded-xl p-3 bg-sidebar-hover/10 animate-in fade-in duration-200">
-                      {/* Allowed Roles */}
                       <div className="flex flex-col gap-2">
                         <span className="text-[10px] font-bold text-text-sec uppercase tracking-wider">分配给角色可见:</span>
                         <div className="flex flex-col gap-1.5 max-h-36 overflow-y-auto border border-card-border bg-card-surface rounded-lg p-2.5">
@@ -1115,7 +1363,6 @@ export default function AdminAppRegistry({
                         </div>
                       </div>
 
-                      {/* Allowed Departments */}
                       <div className="flex flex-col gap-2">
                         <span className="text-[10px] font-bold text-text-sec uppercase tracking-wider">分配给部门可见:</span>
                         <div className="flex flex-col gap-1.5 max-h-36 overflow-y-auto border border-card-border bg-card-surface rounded-lg p-2.5">
@@ -1156,7 +1403,6 @@ export default function AdminAppRegistry({
                 </div>
               </div>
 
-              {/* Modal Footer */}
               <div className="px-6 py-4 border-t border-card-border bg-sidebar-hover/20 flex items-center justify-end gap-3">
                 <button
                   type="button"
@@ -1210,7 +1456,6 @@ export default function AdminAppRegistry({
                   </div>
                 )}
 
-                {/* Title */}
                 <div className="flex flex-col gap-1.5">
                   <label className="text-xs font-bold text-text-sec uppercase tracking-wider">
                     看板标题 <span className="text-red-500">*</span>
@@ -1225,7 +1470,6 @@ export default function AdminAppRegistry({
                   />
                 </div>
 
-                {/* Widget Type & Associated App */}
                 <div className="grid grid-cols-2 gap-4">
                   <div className="flex flex-col gap-1.5">
                     <label className="text-xs font-bold text-text-sec uppercase tracking-wider">
@@ -1258,7 +1502,6 @@ export default function AdminAppRegistry({
                   </div>
                 </div>
 
-                {/* URL */}
                 <div className="flex flex-col gap-1.5">
                   <label className="text-xs font-bold text-text-sec uppercase tracking-wider">
                     {widgetType === 'api' ? '数据接口端点 (API Endpoint)' : '网页链接 (URL)'} <span className="text-red-500">*</span>
@@ -1278,7 +1521,6 @@ export default function AdminAppRegistry({
                   </p>
                 </div>
 
-                {/* Grid Width & Sort Order */}
                 <div className="grid grid-cols-2 gap-4">
                   <div className="flex flex-col gap-1.5">
                     <label className="text-xs font-bold text-text-sec uppercase tracking-wider">

@@ -1,6 +1,6 @@
 import React from 'react';
 import { prisma } from '@/lib/prisma';
-import { checkAdmin } from '@/lib/auth';
+import { checkAdmin, checkSystemAdmin } from '@/lib/auth';
 import AdminAppRegistry from './AdminAppRegistry';
 import { ShieldAlert, Home } from 'lucide-react';
 
@@ -8,6 +8,7 @@ export const dynamic = 'force-dynamic';
 
 export default async function AdminPage() {
   const isAdmin = await checkAdmin();
+  const isSystemAdmin = await checkSystemAdmin();
 
   if (!isAdmin) {
     return (
@@ -106,6 +107,21 @@ export default async function AdminPage() {
     }
   });
 
+  const adminMembers = await prisma.member.findMany({
+    where: {
+      adminType: {
+        in: ['SYS_ADMIN', 'OPS_ADMIN', 'DEPT_ADMIN']
+      }
+    },
+    include: {
+      department: { select: { name: true } },
+      unit: { select: { name: true } }
+    },
+    orderBy: {
+      name: 'asc'
+    }
+  });
+
   // Serialize models safely for client
   const serializedApps = apps.map((app) => ({
     id: app.id,
@@ -163,6 +179,15 @@ export default async function AdminPage() {
     sortOrder: w.sortOrder
   }));
 
+  const serializedAdminMembers = adminMembers.map((m) => ({
+    id: m.id,
+    name: m.name,
+    loginName: m.loginName,
+    adminType: m.adminType,
+    deptName: m.department?.name || '无部门',
+    unitName: m.unit?.name || '无单位'
+  }));
+
   return (
     <AdminAppRegistry 
       initialApps={serializedApps} 
@@ -170,6 +195,8 @@ export default async function AdminPage() {
       accessLogs={serializedAccessLogs}
       roles={serializedRoles}
       initialWidgets={serializedWidgets}
+      isSystemAdmin={isSystemAdmin}
+      initialAdminMembers={serializedAdminMembers}
     />
   );
 }

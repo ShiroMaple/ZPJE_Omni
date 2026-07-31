@@ -219,7 +219,6 @@ async function runSync() {
             emailAddress: m.emailAddress,
             enabled: m.enabled,
             isDeleted: m.isDeleted,
-            isAdmin: !!m.isAdmin,
             orgAccountId: m.orgAccountId,
             orgDepartmentId: m.orgDepartmentId
           },
@@ -232,7 +231,7 @@ async function runSync() {
             emailAddress: m.emailAddress,
             enabled: m.enabled,
             isDeleted: m.isDeleted,
-            isAdmin: !!m.isAdmin,
+            adminType: 'NONE',
             orgAccountId: m.orgAccountId,
             orgDepartmentId: m.orgDepartmentId
           }
@@ -262,7 +261,6 @@ async function runSync() {
               emailAddress: m.emailAddress,
               enabled: m.enabled,
               isDeleted: m.isDeleted,
-              isAdmin: !!m.isAdmin,
               orgAccountId: m.orgAccountId,
               orgDepartmentId: null
             },
@@ -275,7 +273,7 @@ async function runSync() {
               emailAddress: m.emailAddress,
               enabled: m.enabled,
               isDeleted: m.isDeleted,
-              isAdmin: !!m.isAdmin,
+              adminType: 'NONE',
               orgAccountId: m.orgAccountId,
               orgDepartmentId: null
             }

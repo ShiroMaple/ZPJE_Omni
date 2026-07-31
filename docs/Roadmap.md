@@ -131,34 +131,34 @@
 
 > 允许用户置顶或收藏自己高频使用的 3~5 个子系统。
 
-- [x] 数据库新增 `UserFavorite` 模型（`user_favorites` 表），关联 `loginName` + `appId`
-- [x] 实现收藏/取消收藏 API（`POST/DELETE /api/user/favorites`）
-- [x] 卡片右上角增加收藏星标按钮
-- [x] 首页顶部展示"我的收藏"区域，置顶显示已收藏应用
-- [x] ~~数据库新增 AccessLog 模型~~（并入 2.3 访问审计）
-- [x] ~~用户点击应用卡片时记录访问~~（并入 2.3 访问审计）
-- [x] ~~最近使用展示区域~~（由于子应用较少，按计划跳过该功能，置顶“我的收藏”已足够）
+- [X] 数据库新增 `UserFavorite` 模型（`user_favorites` 表），关联 `loginName` + `appId`
+- [X] 实现收藏/取消收藏 API（`POST/DELETE /api/user/favorites`）
+- [X] 卡片右上角增加收藏星标按钮
+- [X] 首页顶部展示"我的收藏"区域，置顶显示已收藏应用
+- [X] ~~数据库新增 AccessLog 模型~~（并入 2.3 访问审计）
+- [X] ~~用户点击应用卡片时记录访问~~（并入 2.3 访问审计）
+- [X] ~~最近使用展示区域~~（由于子应用较少，按计划跳过该功能，置顶“我的收藏”已足够）
 
 ### 2.2 全局搜索 / 指令面板（Command Palette / `Ctrl+K`）
 
 > 键盘快捷键弹出全局搜索框，快速模糊匹配并打开子应用。
 
-- [x] 实现 `CommandPalette.tsx` 弹窗组件
-- [x] 监听 `Ctrl+K` / `Cmd+K` 全局快捷键
-- [x] 支持拼音/关键字模糊搜索应用名称与描述
-- [x] 搜索结果支持键盘上下选择 + 回车直达
-- [x] 搜索结果高亮匹配文本
+- [X] 实现 `CommandPalette.tsx` 弹窗组件
+- [X] 监听 `Ctrl+K` / `Cmd+K` 全局快捷键
+- [X] 支持拼音/关键字模糊搜索应用名称与描述
+- [X] 搜索结果支持键盘上下选择 + 回车直达
+- [X] 搜索结果高亮匹配文本
 
 ### 2.3 访问审计与行为日志（Audit Logging）
 
 > 记录"谁在什么时间通过门户访问了哪个子系统"。
 
-- [x] 复用 2.1.2 的 `AccessLog` 模型，扩展字段：`ip`, `userAgent`
-- [x] 实现记录 API 中间件，在用户点击应用跳转时自动写入审计日志
-- [x] 管理后台新增"访问统计"页面
-  - [x] 各应用访问频次热度排行榜
-  - [x] 按时间范围筛选（近 7 天 / 30 天 / 自定义）
-  - [x] 访问趋势折线图 (已由纯 CSS 卡片排行榜及分页审计表替代，高度可定制)
+- [X] 复用 2.1.2 的 `AccessLog` 模型，扩展字段：`ip`, `userAgent`
+- [X] 实现记录 API 中间件，在用户点击应用跳转时自动写入审计日志
+- [X] 管理后台新增"访问统计"页面
+  - [X] 各应用访问频次热度排行榜
+  - [X] 按时间范围筛选（近 7 天 / 30 天 / 自定义）
+  - [X] 访问趋势折线图 (已由纯 CSS 卡片排行榜及分页审计表替代，高度可定制)
 
 ---
 
@@ -168,20 +168,20 @@
 
 > 结合致远 OA 用户角色/部门信息，控制敏感应用仅特定权限组可见。
 
-- [x] 设计 `Role` 和 `AppPermission` 模型 (新增 `Role`, `MemberRole`, `AppRolePermission`, `AppDepartmentPermission` 结构)
-- [x] 将 SSO 登录时获取的 `loginName` 匹配到 `members` 表中的部门/单位信息并级联加载角色
-- [x] 支持按角色/部门维度配置应用可见性规则
-- [x] 前端根据当前用户权限动态过滤应用卡片
-- [x] 管理后台提供权限配置界面 (集成于应用配置弹窗中)
+- [X] 设计 `Role` 和 `AppPermission` 模型 (新增 `Role`, `MemberRole`, `AppRolePermission`, `AppDepartmentPermission` 结构)
+- [X] 将 SSO 登录时获取的 `loginName` 匹配到 `members` 表中的部门/单位信息并级联加载角色
+- [X] 支持按角色/部门维度配置应用可见性规则
+- [X] 前端根据当前用户权限动态过滤应用卡片
+- [X] 管理后台提供权限配置界面 (集成于应用配置弹窗中)
 
 ### 3.2 首页 Widget 微卡片数据嵌合
 
 > 在门户首页嵌入各子系统的关键数据摘要。
 
-- [x] 设计 Widget 数据模型与组件规范 (新增 `Widget` 模型，支持网格宽度占比)
-- [x] 实现 Widget 渲染引擎（支持 iframe 网页嵌入与 API 异步指标抓取两种模式）
-- [x] 首页布局支持 Widget 网格区域 (已完成，可自适应大屏网格列宽)
-- [x] 管理后台支持配置 Widget 数据源与布局 (已增加 Widget 配置独立标签页及完整的后台 CRUD)
+- [X] 设计 Widget 数据模型与组件规范 (新增 `Widget` 模型，支持网格宽度占比)
+- [X] 实现 Widget 渲染引擎（支持 iframe 网页嵌入与 API 异步指标抓取两种模式）
+- [X] 首页布局支持 Widget 网格区域 (已完成，可自适应大屏网格列宽)
+- [X] 管理后台支持配置 Widget 数据源与布局 (已增加 Widget 配置独立标签页及完整的后台 CRUD)
 
 ### 3.3 统一待办与消息聚合（Unified Notification Hub）
 
@@ -205,23 +205,22 @@
 
 - [X] 内存缓存 `verifiedTickets` 已实现 60 秒自动清理（[route.ts#L31-L37](file:///c:/Users/gaoft/Documents/CodeSpace/Omni/app/api/sso/seeyon/route.ts#L31-L37)）
 - [ ] 观察生产日志，确认过期 Ticket 清理无异常
-- [ ] 若未来部署多 PM2 实例或容器多副本，将 `verifiedTickets` 迁移至 Redis 共享缓存
+- [ ] ~~若未来部署多 PM2 实例或容器多副本，将 `verifiedTickets` 迁移至 Redis 共享缓存~~
 
 ### 4.2 子应用认证中间件接入验证
 
 - [X] 接入模板已编写：[child-app-middleware-template.ts](file:///c:/Users/gaoft/Documents/CodeSpace/Omni/docs/child-app-middleware-template.ts)
-- [ ] 协助 `WeldSnap` 接入统一门户 JWT Cookie 校验，完成集成测试
-- [ ] 协助 `FabFlow` 接入统一门户 JWT Cookie 校验，完成集成测试
+- [ ] 协助 `CarbonPlatform` 接入统一门户 JWT Cookie 校验，完成集成测试
 
 ### 4.3 组织架构定时同步
 
 - [X] 全量同步脚本 `scripts/sync_oa_data.ts` 已在生产验证通过
-- [ ] 配置 `cron` 定时任务（如每日凌晨 2:00）自动执行增量/全量同步
+- [ ] 配置 `cron` 定时任务（如每周一凌晨 2:00）自动执行增量/全量同步
 - [ ] 增加同步结果通知机制（成功/失败日志告警）
 
 ### 4.4 生产环境域名与部署
 
-- [ ] 确认 `omni.izpje.com` DNS 解析已配置到部署主机
+- [ ] 确认 `omni.izpje.com` DNS 解析已配置到部署主机d
 - [ ] 确保生产 `.env` 中所有环境变量正确配置且无硬编码敏感信息
 
 ---
@@ -247,11 +246,3 @@
   ├── 3.2 首页 Widget 微卡片数据嵌合             ██████████ 100% (支持 Iframe 及 API 两种数据渲染引擎，附 CRUD)
   └── 3.3 致远 OA 待办事项聚合                   ░░░░░░░░░░ 0% (暂缓，列入下一期评估)
 ```
-
----
-
-> **备注**：本文件由原 `TodoList.md` 整合演化而来。原 TodoList 中的三项待办事项已按完成状态融入对应章节：
->
-> - ~~退出登录通知致远 OA~~ → §1.5 完整单点登出
-> - ~~监控与清理过期 Ticket 内存缓存~~ → §4.1 Ticket 缓存监控
-> - ~~子应用认证中间件接入验证~~ → §4.2 子应用认证接入
