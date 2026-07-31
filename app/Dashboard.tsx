@@ -570,12 +570,12 @@ export default function Dashboard({ userId, initialApps, departments, isAdmin, u
                 onClick={(e) => toggleFavorite(e, app.id)}
                 className={`p-1.5 rounded-lg border transition-all duration-200 ${
                   isFav 
-                    ? 'bg-amber-500/10 border-amber-500/20 text-amber-500' 
-                    : 'bg-sidebar-hover border-transparent text-text-sec hover:text-amber-500 hover:bg-amber-500/5'
+                    ? 'bg-zpje-accent/10 border-zpje-accent/20 text-zpje-accent' 
+                    : 'bg-sidebar-hover border-transparent text-text-sec hover:text-zpje-accent hover:bg-zpje-accent/5'
                 }`}
                 title={isFav ? '取消收藏' : '收藏应用'}
               >
-                <Star className={`w-3.5 h-3.5 ${isFav ? 'fill-amber-500' : ''}`} />
+                <Star className={`w-3.5 h-3.5 ${isFav ? 'fill-zpje-accent' : ''}`} />
               </button>
             </div>
           </div>

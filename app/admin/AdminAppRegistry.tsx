@@ -575,7 +575,7 @@ export default function AdminAppRegistry({
                 onClick={() => setActiveTab('apps')}
                 className={`px-4 py-1 rounded-full text-xs font-semibold transition-all ${
                   activeTab === 'apps' 
-                    ? 'bg-card-surface text-title shadow-sm border border-card-border' 
+                    ? 'bg-zpje-brand text-white shadow-sm dark:bg-zpje-brand/20 dark:text-zpje-brand' 
                     : 'text-text-sec hover:text-title'
                 }`}
               >
@@ -587,7 +587,7 @@ export default function AdminAppRegistry({
                 }}
                 className={`px-4 py-1 rounded-full text-xs font-semibold transition-all ${
                   activeTab === 'widgets' 
-                    ? 'bg-card-surface text-title shadow-sm border border-card-border' 
+                    ? 'bg-zpje-brand text-white shadow-sm dark:bg-zpje-brand/20 dark:text-zpje-brand' 
                     : 'text-text-sec hover:text-title'
                 }`}
               >
@@ -602,7 +602,7 @@ export default function AdminAppRegistry({
                   }}
                   className={`px-4 py-1 rounded-full text-xs font-semibold transition-all ${
                     activeTab === 'members' 
-                      ? 'bg-card-surface text-title shadow-sm border border-card-border' 
+                      ? 'bg-zpje-brand text-white shadow-sm dark:bg-zpje-brand/20 dark:text-zpje-brand' 
                       : 'text-text-sec hover:text-title'
                   }`}
                 >
@@ -616,7 +616,7 @@ export default function AdminAppRegistry({
                 }}
                 className={`px-4 py-1 rounded-full text-xs font-semibold transition-all ${
                   activeTab === 'stats' 
-                    ? 'bg-card-surface text-title shadow-sm border border-card-border' 
+                    ? 'bg-zpje-brand text-white shadow-sm dark:bg-zpje-brand/20 dark:text-zpje-brand' 
                     : 'text-text-sec hover:text-title'
                 }`}
               >
