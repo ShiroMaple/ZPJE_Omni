@@ -7,7 +7,6 @@ const initialApps = [
         description: '能碳管理平台',
         url: 'https://carbonplatform.izpje.com/',
         icon: 'Zap',
-        category: '能源管理',
         sortOrder: 1,
         mainDeptId: '3903028799223120739', // 生产技术部
     },
@@ -17,7 +16,6 @@ const initialApps = [
         description: '制造标准工期计算工具',
         url: 'https://fabflow.izpje.com/',
         icon: 'Calculator',
-        category: '生产计划',
         sortOrder: 2,
         mainDeptId: '3903028799223120739', // 生产技术部
     },
@@ -27,7 +25,6 @@ const initialApps = [
         description: 'SupOS数采看板',
         url: 'https://suposdata.izpje.com/',
         icon: 'LayoutDashboard',
-        category: '数采监控',
         sortOrder: 3,
         mainDeptId: '3903028799223120739', // 生产技术部
     },
@@ -37,7 +34,6 @@ const initialApps = [
         description: '智能结构化提取文档数据',
         url: 'https://docex.izpje.com/',
         icon: 'FileText',
-        category: '智能工具',
         sortOrder: 4,
         mainDeptId: '3874094900378814311', // 人力资源部
     },
@@ -47,7 +43,6 @@ const initialApps = [
         description: '管道焊接过程质量管理工具',
         url: 'https://weldsnap.izpje.com/',
         icon: 'Activity',
-        category: '质量管理',
         sortOrder: 5,
         mainDeptId: '1837058068862029671', // 安全环保部
     },

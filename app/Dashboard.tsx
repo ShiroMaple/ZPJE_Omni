@@ -52,10 +52,10 @@ interface DBApp {
   description: string | null;
   url: string;
   icon: string | null;
-  category: string;
   isMaintenance: boolean;
   healthStatus: string;
   mainDeptId: string | null;
+  mainDept?: { id: string; name: string } | null;
 }
 
 interface Department {
@@ -328,7 +328,7 @@ export default function Dashboard({ userId, initialApps, departments, isAdmin, u
       status,
       icon: IconComponent,
       color: colorClasses,
-      tag: app.category,
+      tag: app.mainDept?.name || '通用应用',
       mainDeptId: app.mainDeptId,
     };
   });
@@ -685,7 +685,7 @@ export default function Dashboard({ userId, initialApps, departments, isAdmin, u
                     <ExternalLink className="w-4 h-4" />
                     <span>通过OA登录</span>
                   </a>
-                  
+
                   {/* Popover image under the button */}
                   <div className="absolute left-1/2 -translate-x-1/2 top-full mt-2 w-80 bg-card-surface border border-card-border rounded-xl shadow-2xl p-3 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-300 z-50 pointer-events-none">
                     <div className="text-xs text-text-sec mb-2 text-center font-bold">OA 菜单入口指引:</div>
@@ -722,7 +722,7 @@ export default function Dashboard({ userId, initialApps, departments, isAdmin, u
 
                 {/* Hover Popover Detail Card */}
                 {!isGuest && userInfo && (
-                  <div className="absolute right-0 top-full mt-2 w-72 bg-card-surface border border-card-border rounded-2xl shadow-xl p-4 text-text-main opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50">
+                  <div className="absolute right-0 top-full mt-2 w-80 bg-card-surface border border-card-border rounded-2xl shadow-xl p-4 text-text-main opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50">
                     <div className="flex flex-col gap-3">
                       <div className="border-b border-card-border pb-2 flex items-center gap-2.5">
                         <div className="w-9 h-9 rounded-full bg-zpje-brand/10 text-zpje-brand flex items-center justify-center font-bold text-sm">

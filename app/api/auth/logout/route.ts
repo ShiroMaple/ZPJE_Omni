@@ -1,13 +1,14 @@
-// app/api/auth/logout/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { jwtVerify } from 'jose';
+import { recordSystemLog } from '@/lib/audit';
 
 export async function POST(request: NextRequest) {
   const cookieStore = await cookies();
   const token = cookieStore.get('token')?.value;
 
   let ticket: string | null = null;
+  let loginName: string | null = null;
   const secretKey = process.env.SHARED_JWT_SECRET;
 
   if (token && secretKey) {
@@ -16,7 +17,11 @@ export async function POST(request: NextRequest) {
       const secret = encoder.encode(secretKey);
       const { payload } = await jwtVerify(token, secret);
       ticket = (payload.ticket as string) || null;
-      console.info(`Logout triggered for user: ${payload.loginName}, ticket: ${ticket}`);
+      loginName = (payload.loginName as string) || null;
+      console.info(`Logout triggered for user: ${loginName}, ticket: ${ticket}`);
+      if (loginName) {
+        await recordSystemLog(loginName, 'LOGOUT', '用户退出登录并清理会话');
+      }
     } catch (e) {
       console.error('Error verifying JWT during logout:', e);
     }

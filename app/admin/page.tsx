@@ -42,7 +42,7 @@ export default async function AdminPage() {
           <div className="flex flex-col gap-2">
             <h1 className="text-xl font-bold tracking-tight text-title">访问被拒绝</h1>
             <p className="text-sm text-text-sec leading-relaxed">
-              您的账户没有管理员权限，无法访问应用注册中心。如有疑问，请联系系统管理员进行授权。
+              您的账户没有管理员权限，无法访问管理后台。如有疑问，请联系系统管理员进行授权。
             </p>
           </div>
           <a
@@ -85,6 +85,7 @@ export default async function AdminPage() {
           id: true,
           name: true,
           parentId: true,
+          code: true,
         },
         orderBy: {
           name: 'asc'
@@ -110,6 +111,13 @@ export default async function AdminPage() {
     }
   });
 
+  const uniqueLoginNames = Array.from(new Set(accessLogs.map(l => l.loginName)));
+  const logMembers = await prisma.member.findMany({
+    where: { loginName: { in: uniqueLoginNames } },
+    select: { loginName: true, name: true }
+  });
+  const memberNameMap = new Map(logMembers.map(m => [m.loginName, m.name]));
+
   const roles = await prisma.role.findMany({
     orderBy: {
       key: 'asc'
@@ -126,6 +134,12 @@ export default async function AdminPage() {
     },
     orderBy: {
       sortOrder: 'asc'
+    }
+  });
+
+  const systemLogs = await prisma.systemLog.findMany({
+    orderBy: {
+      timestamp: 'desc'
     }
   });
 
@@ -152,7 +166,6 @@ export default async function AdminPage() {
     description: app.description || null,
     url: app.url,
     icon: app.icon || null,
-    category: app.category,
     isMaintenance: app.isMaintenance,
     sortOrder: app.sortOrder,
     mainDeptId: app.mainDeptId || null,
@@ -162,18 +175,26 @@ export default async function AdminPage() {
     deptIds: app.deptPermissions.map(dp => dp.departmentId),
   }));
 
-  const serializedUnits = units.map((unit) => ({
-    id: unit.id,
-    name: unit.name,
-    departments: unit.departments.map((dept) => ({
-      id: dept.id,
-      name: dept.name,
-    })),
-  }));
+  const serializedUnits = units
+    .map((unit) => {
+      const filteredDepts = unit.departments
+        .filter((dept) => dept.code && dept.code.startsWith('JA'))
+        .map((dept) => ({
+          id: dept.id,
+          name: dept.name,
+        }));
+      return {
+        id: unit.id,
+        name: unit.name,
+        departments: filteredDepts,
+      };
+    })
+    .filter((unit) => unit.departments.length > 0);
 
   const serializedAccessLogs = accessLogs.map((log) => ({
     id: log.id,
     loginName: log.loginName,
+    userName: memberNameMap.get(log.loginName) || '',
     appId: log.appId,
     ip: log.ip,
     userAgent: log.userAgent,
@@ -210,15 +231,27 @@ export default async function AdminPage() {
     unitName: m.unit?.name || '无单位'
   }));
 
+  const serializedSystemLogs = systemLogs.map((log) => ({
+    id: log.id,
+    loginName: log.loginName,
+    userName: log.userName || '',
+    actionType: log.actionType,
+    detail: log.detail,
+    ip: log.ip,
+    userAgent: log.userAgent,
+    timestamp: log.timestamp.toISOString()
+  }));
+
   return (
-    <AdminAppRegistry 
-      initialApps={serializedApps} 
-      departmentsTree={serializedUnits} 
+    <AdminAppRegistry
+      initialApps={serializedApps}
+      departmentsTree={serializedUnits}
       accessLogs={serializedAccessLogs}
       roles={serializedRoles}
       initialWidgets={serializedWidgets}
       isSystemAdmin={isSystemAdmin}
       initialAdminMembers={serializedAdminMembers}
+      initialSystemLogs={serializedSystemLogs}
       userId={userId}
       userInfo={currentUserInfo}
       isAdmin={isAdmin}

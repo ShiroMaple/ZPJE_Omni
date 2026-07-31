@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { headers } from 'next/headers';
 import { prisma } from '@/lib/prisma';
 import { checkAdmin } from '@/lib/auth';
+import { recordSystemLog } from '@/lib/audit';
 
 export async function GET() {
   const isAdmin = await checkAdmin();
@@ -43,7 +45,6 @@ export async function POST(request: NextRequest) {
       description,
       url,
       icon,
-      category,
       isMaintenance,
       sortOrder,
       mainDeptId,
@@ -71,7 +72,6 @@ export async function POST(request: NextRequest) {
         description,
         url,
         icon,
-        category: category || '通用应用',
         isMaintenance: !!isMaintenance,
         sortOrder: sortOrder !== undefined ? Number(sortOrder) : 0,
         mainDeptId: mainDeptId || null,
@@ -84,6 +84,10 @@ export async function POST(request: NextRequest) {
         }
       },
     });
+
+    const headersList = await headers();
+    const operator = headersList.get('x-user-id') || 'unknown';
+    await recordSystemLog(operator, 'APP_MANAGE', `创建新应用: ${newApp.name} (${newApp.key})`);
 
     return NextResponse.json(newApp, { status: 201 });
   } catch (err: any) {

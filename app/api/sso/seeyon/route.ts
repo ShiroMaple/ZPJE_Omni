@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { SignJWT } from 'jose';
+import { recordSystemLog } from '@/lib/audit';
 
 // Global cache for verified tickets to handle the two-step Seeyon CIP portal authentication handshake:
 // 1. OA Server requests SSO接口 with ?ticket=XXX -> We verify and cache it -> return "SSOOK"
@@ -93,6 +94,7 @@ export async function GET(request: NextRequest) {
       });
 
       console.info(`SSO verified successfully from cache for user: ${loginName}. Redirecting to homepage.`);
+      await recordSystemLog(loginName, 'SSO_LOGIN', '致远 OA 单点登录成功');
       return NextResponse.redirect(new URL('/', redirectBase));
     } catch (err) {
       console.error('Error generating JWT or setting cookie:', err);

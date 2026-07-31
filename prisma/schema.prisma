@@ -14,7 +14,6 @@ model App {
   description String?  @db.Text // 简介/描述
   url         String   // 访问入口 URL
   icon        String?  // 图标名称 (如 Lucide 图标名 "Zap", "Activity")
-  category    String   @default("通用应用") // 应用分类：生产管理、质量监控、能源等
   
   // 状态与排序控制
   isMaintenance Boolean @default(false) // 是否开启维护模式
@@ -208,4 +207,18 @@ enum AdminType {
   SYS_ADMIN
   OPS_ADMIN
   DEPT_ADMIN
+}
+
+// 统一系统操作与审计日志模型
+model SystemLog {
+  id         String   @id @default(cuid())
+  loginName  String   // 操作用户登录名
+  userName   String?  // 操作用户姓名
+  actionType String   // "SSO_LOGIN" | "LOGOUT" | "APP_ACCESS" | "APP_MANAGE" | "WIDGET_MANAGE" | "ADMIN_MANAGE"
+  detail     String   @db.Text // 日志描述
+  ip         String?  // 访问 IP 地址
+  userAgent  String?  @db.Text // 浏览器终端 UA
+  timestamp  DateTime @default(now())
+
+  @@map("system_logs")
 }

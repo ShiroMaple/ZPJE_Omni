@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { headers } from 'next/headers';
 import { prisma } from '@/lib/prisma';
 import { checkSystemAdmin } from '@/lib/auth';
+import { recordSystemLog } from '@/lib/audit';
 
 export async function GET(req: NextRequest) {
   const isSysAdmin = await checkSystemAdmin();
@@ -72,10 +74,26 @@ export async function PUT(req: NextRequest) {
       return NextResponse.json({ error: 'Invalid adminType' }, { status: 400 });
     }
 
+    const member = await prisma.member.findUnique({
+      where: { id: memberId },
+      select: { name: true, loginName: true }
+    });
+    if (!member) {
+      return NextResponse.json({ error: 'Member not found' }, { status: 404 });
+    }
+
     const updated = await prisma.member.update({
       where: { id: memberId },
       data: { adminType }
     });
+
+    const typeLabel = adminType === 'NONE' ? '普通成员 (撤销权限)'
+      : adminType === 'SYS_ADMIN' ? '系统管理员'
+      : adminType === 'OPS_ADMIN' ? '运维管理员' : '部门管理员';
+
+    const headersList = await headers();
+    const operator = headersList.get('x-user-id') || 'unknown';
+    await recordSystemLog(operator, 'ADMIN_MANAGE', `配置成员 ${member.name} (${member.loginName}) 的管理员权限为: ${typeLabel}`);
 
     return NextResponse.json(updated);
   } catch (err: any) {

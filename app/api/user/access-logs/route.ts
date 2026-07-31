@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { headers } from 'next/headers';
 import { prisma } from '@/lib/prisma';
+import { recordSystemLog } from '@/lib/audit';
 
 export async function POST(req: Request) {
   try {
@@ -16,6 +17,12 @@ export async function POST(req: Request) {
     const ip = headersList.get('x-forwarded-for') || headersList.get('x-real-ip') || '127.0.0.1';
     const userAgent = headersList.get('user-agent') || 'Unknown';
 
+    // Fetch app details for descriptive logging
+    const targetApp = await prisma.app.findUnique({
+      where: { id: appId },
+      select: { name: true, key: true }
+    });
+
     const log = await prisma.accessLog.create({
       data: {
         loginName,
@@ -24,6 +31,10 @@ export async function POST(req: Request) {
         userAgent,
       }
     });
+
+    if (loginName !== 'guest' && targetApp) {
+      await recordSystemLog(loginName, 'APP_ACCESS', `访问子系统: ${targetApp.name} (${targetApp.key})`);
+    }
 
     return NextResponse.json(log);
   } catch (err: any) {

@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
+import { headers } from 'next/headers';
 import { prisma } from '@/lib/prisma';
 import { checkAdmin } from '@/lib/auth';
+import { recordSystemLog } from '@/lib/audit';
 
 export async function PUT(
   req: Request,
@@ -30,6 +32,10 @@ export async function PUT(
       }
     });
 
+    const headersList = await headers();
+    const operator = headersList.get('x-user-id') || 'unknown';
+    await recordSystemLog(operator, 'WIDGET_MANAGE', `更新 Widget 看板: ${widget.title} (${widget.type})`);
+
     return NextResponse.json(widget);
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });
@@ -47,9 +53,20 @@ export async function DELETE(
     }
 
     const { id } = await params;
+    const widget = await prisma.widget.findUnique({
+      where: { id }
+    });
+    if (!widget) {
+      return NextResponse.json({ error: 'Widget not found' }, { status: 404 });
+    }
+
     await prisma.widget.delete({
       where: { id }
     });
+
+    const headersList = await headers();
+    const operator = headersList.get('x-user-id') || 'unknown';
+    await recordSystemLog(operator, 'WIDGET_MANAGE', `删除 Widget 看板: ${widget.title} (${widget.type})`);
 
     return NextResponse.json({ success: true });
   } catch (err: any) {

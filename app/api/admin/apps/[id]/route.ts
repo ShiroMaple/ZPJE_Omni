@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { headers } from 'next/headers';
 import { prisma } from '@/lib/prisma';
 import { checkAdmin } from '@/lib/auth';
+import { recordSystemLog } from '@/lib/audit';
 
 export async function PUT(
   request: NextRequest,
@@ -20,7 +22,6 @@ export async function PUT(
       description,
       url,
       icon,
-      category,
       isMaintenance,
       sortOrder,
       mainDeptId,
@@ -58,7 +59,6 @@ export async function PUT(
           description: description !== undefined ? description : app.description,
           url: url !== undefined ? url : app.url,
           icon: icon !== undefined ? icon : app.icon,
-          category: category !== undefined ? category : app.category,
           isMaintenance: isMaintenance !== undefined ? !!isMaintenance : app.isMaintenance,
           sortOrder: sortOrder !== undefined ? Number(sortOrder) : app.sortOrder,
           mainDeptId: mainDeptId !== undefined ? (mainDeptId || null) : app.mainDeptId,
@@ -72,6 +72,10 @@ export async function PUT(
         },
       })
     ]);
+
+    const headersList = await headers();
+    const operator = headersList.get('x-user-id') || 'unknown';
+    await recordSystemLog(operator, 'APP_MANAGE', `更新应用: ${updatedApp.name} (${updatedApp.key})`);
 
     return NextResponse.json(updatedApp);
   } catch (err: any) {
@@ -101,6 +105,10 @@ export async function DELETE(
     await prisma.app.delete({
       where: { id }
     });
+
+    const headersList = await headers();
+    const operator = headersList.get('x-user-id') || 'unknown';
+    await recordSystemLog(operator, 'APP_MANAGE', `删除应用: ${app.name} (${app.key})`);
 
     return NextResponse.json({ success: true });
   } catch (err: any) {

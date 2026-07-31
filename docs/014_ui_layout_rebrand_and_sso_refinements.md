@@ -33,6 +33,13 @@
   * **弹窗重命名**：将表单弹窗的标题由原来的“编辑子应用/新增子应用”统一更名为“编辑应用/新增应用”。
   * **图标实时预览**：在“图标预设 (Icon)”选择下拉框左侧添加了即时预览区块，基于 `renderIcon` 辅助渲染器根据选中项状态自动显示对应的 Lucide 矢量图标，大幅度改善录入体验。
   * **二级级联选择部门**：将原来扁平、杂乱的“归属侧边栏分类部门”下拉框，拆分为独立的“所属单位”与“归属分类部门”两级级联 `<select>`。先选择所属单位（公司/机构），级联下拉框则利用 React 状态联动动态过滤，仅显示该单位下属的二级部门，杜绝了跨单位错选。
+  * **分类类别（Category）字段移除**：从前端表单界面、数据库 Schema 模型（执行了 `20260731055916_remove_app_category` 迁移）以及所有后端 REST API 接口中完全删除了 category 字段。主页卡片的分类标签更新映射为更具实用性的“归属部门名称” (`app.mainDept?.name`)，且保留了全局模糊检索对该名称的支持。
+  * **空所属单位过滤**：自动过滤并隐藏了没有分配任何子部门的所属单位节点，保证下拉列表的干净和有效性。
+  * **暗色模式控件统一**：彻底清除了各 Select 控件中强行设定的 `bg-white` 强制白底类，使其能无缝遵循 `bg-card-surface` 和 `text-title` CSS 变量，解决在暗色主题下呈现白底黑字的视觉缺陷。
+  * **表单布局精简重构**：将移除分类后的表单重新排布，将“图标预设与排序权值”并排排列，“所属单位与归属分类部门”并排级联，实现完美的 5 行紧凑均衡网格布局。
+  * **两级前置筛选与代码过滤**：部门选择列表现在会执行更加严格的过滤逻辑：
+    * 仅保留 `departments` 表中 `code`（部门代码）以 **`JA`** 开头的部门。
+    * 如果某个 `unit`（单位/机构）内不包含任何 `code` 满足以 `JA` 开头的部门，该单位将被自动排除，而不会呈现在“所属单位”的级联下拉列表中，杜绝了废弃及外部协同单位对核心流程的干扰。
 
 ---
 
@@ -48,6 +55,8 @@
 
 - **遇到问题**：本地开发环境 `http://localhost:3000` 登录后无法保持状态，一直显示游客模式。
 - **解决方案**：由于 `.env` 配置文件中配置了 `COOKIE_DOMAIN=.izpje.com`，导致本地开发登录时后端仍坚持发送包含 `domain=.izpje.com` 的 Set-Cookie 响应头。现代浏览器会因安全规则丢弃该 Cookie。通过在 `route.ts` 中判断主机名是否包含 `localhost` / `127.0.0.1`，若是则动态删除 Domain 属性得以解决。
+- **遇到问题**：运行及构建时，React 19 / Next.js 16 抛出 `Encountered a script tag while rendering React component. Scripts inside React components are never executed when rendering on the client...` 警告，引发客户端 Hydration 行为冲突。
+- **解决方案**：在根布局 [layout.tsx](file:///c:/Users/gaoft/Documents/CodeSpace/Omni/app/layout.tsx) 中，不应使用原始的 `<script>` 标签注入主题拦截代码。需使用 Next.js 推荐的 `next/script` 包中的 `<Script>` 组件，并指定 `strategy="beforeInteractive"` 确保在页面注水前正确载入；同时在 `<html>` 标签上指定 `suppressHydrationWarning` 以跳过对 `data-theme` 属性在初次编译下的同步比对报警。
 - **避坑提示**：**切勿在生产环境的代码路径中开放任何类似 `zadmin` 的直通账号校验。** 任何对数据库判定机制的绕过，必须严格包裹在 `process.env.NODE_ENV !== 'production'` 环境分流判定中。
 
 ---

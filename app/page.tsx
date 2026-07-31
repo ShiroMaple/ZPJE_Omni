@@ -147,7 +147,6 @@ export default async function Page() {
     description: app.description,
     url: app.url,
     icon: app.icon,
-    category: app.category,
     isMaintenance: app.isMaintenance,
     healthStatus: app.healthStatus,
     mainDeptId: app.mainDeptId,
