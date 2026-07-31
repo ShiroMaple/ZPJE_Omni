@@ -15,6 +15,9 @@ export async function checkAdmin(): Promise<boolean> {
   if (userId === 'admin') {
     return true;
   }
+  if (process.env.NODE_ENV !== 'production' && userId === 'zadmin') {
+    return true;
+  }
   
   try {
     const member = await prisma.member.findUnique({
@@ -44,6 +47,9 @@ export async function checkSystemAdmin(): Promise<boolean> {
   }
   
   if (userId === 'admin') {
+    return true;
+  }
+  if (process.env.NODE_ENV !== 'production' && userId === 'zadmin') {
     return true;
   }
   

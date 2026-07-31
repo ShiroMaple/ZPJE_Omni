@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { 
   Plus, 
   Edit, 
@@ -27,7 +27,11 @@ import {
   Eye,
   EyeOff,
   Shield,
-  Search
+  Search,
+  User,
+  Moon,
+  Sun,
+  LogOut
 } from 'lucide-react';
 
 interface DBApp {
@@ -108,6 +112,9 @@ interface AdminAppRegistryProps {
   initialWidgets: WidgetConfig[];
   isSystemAdmin: boolean;
   initialAdminMembers: AdminMember[];
+  userId: string;
+  userInfo: { name: string; loginName: string; unitName: string; deptName: string; } | null;
+  isAdmin: boolean;
 }
 
 const ICON_PRESETS = [
@@ -128,7 +135,10 @@ export default function AdminAppRegistry({
   roles,
   initialWidgets,
   isSystemAdmin,
-  initialAdminMembers
+  initialAdminMembers,
+  userId,
+  userInfo,
+  isAdmin
 }: AdminAppRegistryProps) {
   const [apps, setApps] = useState<DBApp[]>(initialApps);
   const [widgets, setWidgets] = useState<WidgetConfig[]>(initialWidgets);
@@ -136,6 +146,59 @@ export default function AdminAppRegistry({
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingApp, setEditingApp] = useState<DBApp | null>(null);
   const [isDeleting, setIsDeleting] = useState<string | null>(null);
+
+  // Unit and Department 2-level selection state
+  const [selectedUnitId, setSelectedUnitId] = useState('');
+
+  const handleUnitChange = (unitId: string) => {
+    setSelectedUnitId(unitId);
+    setMainDeptId('');
+  };
+
+  const renderIcon = (iconName: string | null, className = "w-4 h-4") => {
+    switch (iconName) {
+      case 'Zap': return <Zap className={className} />;
+      case 'Calculator': return <Calculator className={className} />;
+      case 'LayoutDashboard': return <LayoutDashboard className={className} />;
+      case 'FileText': return <FileText className={className} />;
+      case 'Activity': return <Activity className={className} />;
+      case 'Leaf': return <Leaf className={className} />;
+      case 'Clock': return <Clock className={className} />;
+      case 'Hammer': return <Hammer className={className} />;
+      default: return <LayoutDashboard className={className} />;
+    }
+  };
+
+  // Theme & Session logout hooks
+  const [theme, setTheme] = useState<'light' | 'dark'>('light');
+  const [mounted, setMounted] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+    const initialTheme = document.documentElement.getAttribute('data-theme') as 'light' | 'dark' || 'light';
+    setTheme(initialTheme);
+  }, []);
+
+  const toggleTheme = () => {
+    const nextTheme = theme === 'light' ? 'dark' : 'light';
+    setTheme(nextTheme);
+    document.documentElement.setAttribute('data-theme', nextTheme);
+    localStorage.setItem('theme', nextTheme);
+  };
+
+  const handleLogout = async () => {
+    if (isLoggingOut) return;
+    setIsLoggingOut(true);
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' });
+      // Redirect back to the homepage (SSO logout / guest view)
+      window.location.href = '/';
+    } catch (err) {
+      console.error('Failed to log out:', err);
+      setIsLoggingOut(false);
+    }
+  };
 
   // Tab State
   const [activeTab, setActiveTab] = useState<'apps' | 'stats' | 'widgets' | 'members'>('apps');
@@ -194,6 +257,7 @@ export default function AdminAppRegistry({
     setIsMaintenance(false);
     setSortOrder(0);
     setMainDeptId('');
+    setSelectedUnitId('');
     setVisibleToAll(true);
     setSelectedRoleIds([]);
     setSelectedDeptIds([]);
@@ -212,6 +276,17 @@ export default function AdminAppRegistry({
     setIsMaintenance(app.isMaintenance);
     setSortOrder(app.sortOrder);
     setMainDeptId(app.mainDeptId || '');
+    
+    // Find parent unit containing the app's mainDeptId
+    if (app.mainDeptId) {
+      const parentUnit = departmentsTree.find((u) =>
+        u.departments.some((d) => d.id === app.mainDeptId)
+      );
+      setSelectedUnitId(parentUnit ? parentUnit.id : '');
+    } else {
+      setSelectedUnitId('');
+    }
+
     setVisibleToAll(app.visibleToAll);
     setSelectedRoleIds(app.roleIds || []);
     setSelectedDeptIds(app.deptIds || []);
@@ -556,115 +631,205 @@ export default function AdminAppRegistry({
   };
 
   return (
-    <div className="min-h-screen bg-canvas text-text-main font-sans transition-colors duration-200">
-      {/* Header */}
-      <header className="sticky top-0 z-40 bg-card-surface border-b border-card-border shadow-sm transition-colors duration-200">
-        <div className="max-w-[1800px] w-full mx-auto px-6 md:px-12 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="relative flex items-center justify-center w-8 h-8 rounded bg-white overflow-hidden border border-card-border">
-              <img src="/logo_zpje.jpg" alt="建安万维" className="w-full h-full object-cover" />
-            </div>
-            <span className="text-lg font-bold tracking-tight text-title">建安万维 管理后台</span>
-            <span className="text-xs px-2 py-0.5 rounded bg-sidebar-hover text-text-sec font-medium">配置面板</span>
+    <div className="flex h-screen w-full overflow-hidden bg-canvas text-text-main font-sans transition-colors duration-200">
+      {/* Left Sidebar */}
+      <aside className="hidden lg:flex h-screen w-64 flex-col bg-zpje-brand text-white border-r border-card-border shrink-0 z-40">
+        {/* Logo & Title */}
+        <div className="flex h-16 items-center px-4 gap-3 border-b border-white/10 shrink-0">
+          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white p-0.5 shrink-0 shadow-sm">
+            <img
+              src="/logo_zpje.jpg"
+              className="rounded object-contain w-full h-full"
+              alt="建安万维"
+            />
           </div>
-          
-          <div className="flex items-center gap-3">
-            {/* Tab switchers in header */}
-            <div className="flex bg-sidebar-hover/40 p-1 rounded-full border border-card-border">
-              <button
-                onClick={() => setActiveTab('apps')}
-                className={`px-4 py-1 rounded-full text-xs font-semibold transition-all ${
-                  activeTab === 'apps' 
-                    ? 'bg-zpje-brand text-white shadow-sm dark:bg-zpje-brand/20 dark:text-zpje-brand' 
-                    : 'text-text-sec hover:text-title'
-                }`}
-              >
-                应用管理
-              </button>
-              <button
-                onClick={() => {
-                  setActiveTab('widgets');
-                }}
-                className={`px-4 py-1 rounded-full text-xs font-semibold transition-all ${
-                  activeTab === 'widgets' 
-                    ? 'bg-zpje-brand text-white shadow-sm dark:bg-zpje-brand/20 dark:text-zpje-brand' 
-                    : 'text-text-sec hover:text-title'
-                }`}
-              >
-                Widget 配置
-              </button>
-              {isSystemAdmin && (
-                <button
-                  onClick={() => {
-                    setActiveTab('members');
-                    setMemberSearch('');
-                    setMemberSearchResults([]);
-                  }}
-                  className={`px-4 py-1 rounded-full text-xs font-semibold transition-all ${
-                    activeTab === 'members' 
-                      ? 'bg-zpje-brand text-white shadow-sm dark:bg-zpje-brand/20 dark:text-zpje-brand' 
-                      : 'text-text-sec hover:text-title'
-                  }`}
-                >
-                  管理员分配
-                </button>
-              )}
-              <button
-                onClick={() => {
-                  setActiveTab('stats');
-                  setCurrentPage(1);
-                }}
-                className={`px-4 py-1 rounded-full text-xs font-semibold transition-all ${
-                  activeTab === 'stats' 
-                    ? 'bg-zpje-brand text-white shadow-sm dark:bg-zpje-brand/20 dark:text-zpje-brand' 
-                    : 'text-text-sec hover:text-title'
-                }`}
-              >
-                访问统计
-              </button>
-            </div>
-
-            <a 
-              href="/" 
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-input-border bg-card-surface hover:bg-sidebar-hover transition-colors text-sm font-medium text-text-sec hover:text-title"
-            >
-              <Home className="w-4 h-4" />
-              <span>返回门户</span>
-            </a>
-
-            {activeTab === 'apps' && (
-              <button
-                onClick={openAddModal}
-                className="flex items-center gap-1 px-4 py-1.5 rounded-full bg-title text-card-surface hover:opacity-90 transition-colors text-sm font-medium"
-              >
-                <Plus className="w-4 h-4" />
-                <span>新增应用</span>
-              </button>
-            )}
-
-            {activeTab === 'widgets' && (
-              <button
-                onClick={openAddWidgetModal}
-                className="flex items-center gap-1 px-4 py-1.5 rounded-full bg-title text-card-surface hover:opacity-90 transition-colors text-sm font-medium"
-              >
-                <Plus className="w-4 h-4" />
-                <span>新增 Widget</span>
-              </button>
-            )}
+          <div className="flex flex-col overflow-hidden">
+            <span className="text-lg font-bold tracking-wider whitespace-nowrap text-white">建安万维</span>
+            <span className="text-[12px] font-bold text-white/50 tracking-widest -mt-1 font-sans">管理后台</span>
           </div>
         </div>
-      </header>
 
-      {/* Main Container */}
-      <main className="max-w-[1800px] w-full mx-auto px-6 md:px-12 py-10 flex flex-col gap-8">
-        
-        {/* Tab 1: Apps Management */}
-        {activeTab === 'apps' && (
-          <>
-            <div className="flex flex-col gap-1.5">
-              <h1 className="text-2xl font-bold tracking-tight text-title">应用注册中心</h1>
-              <p className="text-sm text-text-sec">控制应用显隐及分发策略，支持配置维护模式与精细的部门/角色可见性隔离。</p>
+        {/* Tab switches */}
+        <nav className="flex-1 py-6 px-3 flex flex-col gap-1.5 overflow-y-auto">
+          <button
+            onClick={() => setActiveTab('apps')}
+            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg border text-sm font-semibold transition-all duration-300 text-left cursor-pointer ${
+              activeTab === 'apps'
+                ? 'bg-zpje-accent border-transparent text-white shadow-sm'
+                : 'bg-transparent border-transparent text-white/80 hover:text-white hover:bg-white/10'
+            }`}
+          >
+            <Layers className="h-4 w-4 shrink-0" />
+            <span>应用管理</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('widgets')}
+            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg border text-sm font-semibold transition-all duration-300 text-left cursor-pointer ${
+              activeTab === 'widgets'
+                ? 'bg-zpje-accent border-transparent text-white shadow-sm'
+                : 'bg-transparent border-transparent text-white/80 hover:text-white hover:bg-white/10'
+            }`}
+          >
+            <LayoutDashboard className="h-4 w-4 shrink-0" />
+            <span>Widget 配置</span>
+          </button>
+
+          {isSystemAdmin && (
+            <button
+              onClick={() => {
+                setActiveTab('members');
+                setMemberSearch('');
+                setMemberSearchResults([]);
+              }}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg border text-sm font-semibold transition-all duration-300 text-left cursor-pointer ${
+                activeTab === 'members'
+                  ? 'bg-zpje-accent border-transparent text-white shadow-sm'
+                  : 'bg-transparent border-transparent text-white/80 hover:text-white hover:bg-white/10'
+              }`}
+            >
+              <Shield className="h-4 w-4 shrink-0" />
+              <span>管理员分配</span>
+            </button>
+          )}
+
+          <button
+            onClick={() => {
+              setActiveTab('stats');
+              setCurrentPage(1);
+            }}
+            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg border text-sm font-semibold transition-all duration-300 text-left cursor-pointer ${
+              activeTab === 'stats'
+                ? 'bg-zpje-accent border-transparent text-white shadow-sm'
+                : 'bg-transparent border-transparent text-white/80 hover:text-white hover:bg-white/10'
+            }`}
+          >
+            <BarChart3 className="h-4 w-4 shrink-0" />
+            <span>访问统计</span>
+          </button>
+        </nav>
+
+        {/* Return to Portal Button at Sidebar Bottom */}
+        <div className="p-4 border-t border-white/10 shrink-0">
+          <a
+            href="/"
+            className="flex items-center justify-center gap-2 w-full py-2.5 rounded-xl border border-white/10 hover:bg-white/10 transition-all text-sm font-bold text-white shadow-sm cursor-pointer bg-white/5"
+          >
+            <Home className="w-4.5 h-4.5" />
+            <span>返回门户</span>
+          </a>
+        </div>
+      </aside>
+
+      {/* Right Content Pane */}
+      <div className="flex-1 flex flex-col h-full overflow-hidden min-w-0">
+        {/* Right Header */}
+        <header className="w-full border-b border-card-border bg-nav-bg backdrop-blur-md transition-colors duration-200 h-16 shrink-0 z-40 flex items-center justify-between px-6 md:px-10">
+          <div className="flex items-center gap-2 text-sm font-bold text-text-sec">
+            <span className="text-title">管理后台</span>
+            <span className="text-text-sec/50">/</span>
+            <span className="text-text-sec">
+              {activeTab === 'apps' ? '应用管理' :
+               activeTab === 'widgets' ? 'Widget 配置' :
+               activeTab === 'members' ? '管理员分配' : '访问统计'}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-3">
+            {/* Theme switcher */}
+            {mounted && (
+              <button
+                onClick={toggleTheme}
+                className="p-2 rounded-xl border border-card-border bg-card-surface hover:bg-sidebar-hover text-text-sec hover:text-title transition-all cursor-pointer"
+                title={theme === 'light' ? '切换至暗色模式' : '切换至亮色模式'}
+              >
+                {theme === 'light' ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
+              </button>
+            )}
+
+            {/* Hover details user status badge */}
+            <div className="relative group/user">
+              <div className="px-4 py-2 rounded-xl bg-card-surface border border-card-border flex items-center gap-3 transition-all hover:bg-sidebar-hover cursor-default">
+                <div className="relative flex items-center justify-center">
+                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 shadow-emerald-400/50 animate-pulse" />
+                  <span className="absolute inline-flex h-full w-full rounded-full opacity-75 animate-ping bg-emerald-400" />
+                </div>
+                <div className="flex items-center gap-2">
+                  <User className="w-4 h-4 text-text-sec" />
+                  <span className="text-sm font-semibold text-title">
+                    {userInfo?.name || userId}
+                  </span>
+                </div>
+              </div>
+
+              {/* Hover Popover Detail Card */}
+              {userInfo && (
+                <div className="absolute right-0 top-full mt-2 w-72 bg-card-surface border border-card-border rounded-2xl shadow-xl p-4 text-text-main opacity-0 invisible group-hover/user:opacity-100 group-hover/user:visible transition-all duration-200 z-50">
+                  <div className="flex flex-col gap-3">
+                    <div className="border-b border-card-border pb-2 flex items-center gap-2.5">
+                      <div className="w-9 h-9 rounded-full bg-zpje-brand/10 text-zpje-brand flex items-center justify-center font-bold text-sm">
+                        {userInfo.name.slice(-2)}
+                      </div>
+                      <div>
+                        <h4 className="font-bold text-title text-sm">{userInfo.name}</h4>
+                        <span className="text-xs text-text-sec font-mono">@{userInfo.loginName}</span>
+                      </div>
+                    </div>
+                    
+                    <div className="flex flex-col gap-2 text-sm">
+                      <div className="flex items-start justify-between gap-2">
+                        <span className="text-text-sec shrink-0">所属单位:</span>
+                        <span className="text-title text-right font-medium">{userInfo.unitName}</span>
+                      </div>
+                      <div className="flex items-start justify-between gap-2">
+                        <span className="text-text-sec shrink-0">所属部门:</span>
+                        <span className="text-title text-right font-medium">{userInfo.deptName}</span>
+                      </div>
+                      <div className="flex items-start justify-between gap-2">
+                        <span className="text-text-sec shrink-0">权限角色:</span>
+                        <span className="px-2 py-0.5 rounded-full text-xs font-bold border bg-red-500/10 text-red-500 border-red-500/20">
+                          管理员
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
+
+            {/* Logout button */}
+            <button
+              onClick={handleLogout}
+              disabled={isLoggingOut}
+              className="px-4 py-2 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-500 border border-red-500/20 flex items-center gap-2 transition-all text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+              title="退出登录"
+            >
+              <LogOut className="w-4 h-4" />
+              <span>{isLoggingOut ? '注销中...' : '退出'}</span>
+            </button>
+          </div>
+        </header>
+
+        {/* Scrollable Content Workspace */}
+        <div className="flex-1 overflow-y-auto w-full px-6 md:px-10 py-8 flex flex-col gap-8 max-w-[1800px]">
+          
+          {/* Tab 1: Apps Management */}
+          {activeTab === 'apps' && (
+            <>
+              <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-6 border-b border-card-border pb-6 shrink-0">
+                <div>
+                  <h1 className="text-2xl font-bold tracking-tight text-title">应用注册中心</h1>
+                  <p className="text-sm text-text-sec mt-1">控制应用显隐及分发策略，支持配置维护模式与精细 of 部门/角色可见性隔离。</p>
+                </div>
+                
+                <button
+                  onClick={openAddModal}
+                  className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-zpje-accent text-white hover:opacity-90 transition-all text-sm font-bold shadow-sm cursor-pointer shrink-0"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>新增应用</span>
+                </button>
+              </div>
 
             <div className="bg-card-surface rounded-lg border border-card-border overflow-hidden shadow-sm transition-colors duration-200">
               <table className="w-full text-left border-collapse text-sm">
@@ -685,16 +850,8 @@ export default function AdminAppRegistry({
                         <td className="p-4 text-center font-mono text-text-sec/80">{app.sortOrder}</td>
                         <td className="p-4">
                           <div className="flex items-center gap-2.5">
-                            <div className="p-2 rounded bg-sidebar-hover text-text-sec">
-                              {app.icon === 'Zap' && <Zap className="w-4 h-4" />}
-                              {app.icon === 'Calculator' && <Calculator className="w-4 h-4" />}
-                              {app.icon === 'LayoutDashboard' && <LayoutDashboard className="w-4 h-4" />}
-                              {app.icon === 'FileText' && <FileText className="w-4 h-4" />}
-                              {app.icon === 'Activity' && <Activity className="w-4 h-4" />}
-                              {app.icon === 'Leaf' && <Leaf className="w-4 h-4" />}
-                              {app.icon === 'Clock' && <Clock className="w-4 h-4" />}
-                              {app.icon === 'Hammer' && <Hammer className="w-4 h-4" />}
-                              {!ICON_PRESETS.includes(app.icon || '') && <LayoutDashboard className="w-4 h-4" />}
+                            <div className="p-2 rounded bg-sidebar-hover text-text-sec flex items-center justify-center w-8 h-8 shrink-0">
+                              {renderIcon(app.icon)}
                             </div>
                             <div>
                               <div className="font-semibold text-title">{app.name}</div>
@@ -782,9 +939,19 @@ export default function AdminAppRegistry({
         {/* Tab 2: Widget Configuration */}
         {activeTab === 'widgets' && (
           <>
-            <div className="flex flex-col gap-1.5">
-              <h1 className="text-2xl font-bold tracking-tight text-title">数据看板 Widget 配置</h1>
-              <p className="text-sm text-text-sec">在门户首页引入子系统的微缩视图，支持网页 iframe 嵌入或对接标准 API 异步渲染指标格。</p>
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-6 border-b border-card-border pb-6 shrink-0">
+              <div>
+                <h1 className="text-2xl font-bold tracking-tight text-title">数据看板 Widget 配置</h1>
+                <p className="text-sm text-text-sec mt-1">在门户首页引入子系统的微缩视图，支持网页 iframe 嵌入或对接标准 API 异步渲染指标格。</p>
+              </div>
+
+              <button
+                onClick={openAddWidgetModal}
+                className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-zpje-accent text-white hover:opacity-90 transition-all text-sm font-bold shadow-sm cursor-pointer shrink-0"
+              >
+                <Plus className="w-4 h-4" />
+                <span>新增 Widget</span>
+              </button>
             </div>
 
             <div className="bg-card-surface rounded-lg border border-card-border overflow-hidden shadow-sm transition-colors duration-200">
@@ -1170,7 +1337,8 @@ export default function AdminAppRegistry({
             </div>
           </>
         )}
-      </main>
+      </div>
+    </div>
 
       {/* App Form Modal */}
       {isModalOpen && (
@@ -1178,7 +1346,7 @@ export default function AdminAppRegistry({
           <div className="w-full max-w-2xl bg-card-surface rounded-lg border border-card-border shadow-xl overflow-hidden animate-in fade-in zoom-in duration-200 text-text-main">
             <div className="px-6 py-4 border-b border-card-border flex items-center justify-between bg-sidebar-hover/10">
               <h2 className="text-lg font-bold text-title">
-                {editingApp ? '编辑子应用' : '新增子应用'}
+                {editingApp ? '编辑应用' : '新增应用'}
               </h2>
               <button 
                 onClick={() => setIsModalOpen(false)}
@@ -1283,43 +1451,67 @@ export default function AdminAppRegistry({
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="flex flex-col gap-1.5">
+                  <div className="flex flex-col gap-1.5 col-span-2 md:col-span-1">
                     <label className="text-xs font-bold text-text-sec uppercase tracking-wider">
                       图标预设 (Icon)
                     </label>
+                    <div className="flex items-center gap-2">
+                      <div className="flex items-center justify-center w-10 h-10 rounded border border-input-border bg-card-surface text-title shrink-0">
+                        {renderIcon(icon, "w-5 h-5")}
+                      </div>
+                      <select
+                        value={icon}
+                        onChange={(e) => setIcon(e.target.value)}
+                        className="flex-1 px-3 py-2 rounded border border-input-border bg-card-surface text-title text-sm bg-white focus:outline-none focus:ring-1 focus:ring-title focus:border-title font-mono h-10 cursor-pointer"
+                      >
+                        {ICON_PRESETS.map((iconName) => (
+                          <option key={iconName} value={iconName} className="bg-card-surface text-title font-mono">
+                            {iconName}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col gap-1.5 col-span-2 md:col-span-1">
+                    <label className="text-xs font-bold text-text-sec uppercase tracking-wider">
+                      所属单位 <span className="text-red-500">*</span>
+                    </label>
                     <select
-                      value={icon}
-                      onChange={(e) => setIcon(e.target.value)}
-                      className="px-3 py-2 rounded border border-input-border bg-card-surface text-title text-sm bg-white focus:outline-none focus:ring-1 focus:ring-title focus:border-title font-mono"
+                      required
+                      value={selectedUnitId}
+                      onChange={(e) => handleUnitChange(e.target.value)}
+                      className="px-3 py-2 rounded border border-input-border bg-card-surface text-title text-sm bg-white focus:outline-none focus:ring-1 focus:ring-title focus:border-title h-10 cursor-pointer"
                     >
-                      {ICON_PRESETS.map((iconName) => (
-                        <option key={iconName} value={iconName} className="bg-card-surface text-title font-mono">
-                          {iconName}
+                      <option value="">-- 请选择所属单位 --</option>
+                      {departmentsTree.map((unit) => (
+                        <option key={unit.id} value={unit.id} className="text-title bg-card-surface">
+                          {unit.name}
                         </option>
                       ))}
                     </select>
                   </div>
 
-                  <div className="flex flex-col gap-1.5">
+                  <div className="flex flex-col gap-1.5 col-span-2">
                     <label className="text-xs font-bold text-text-sec uppercase tracking-wider">
-                      归属侧边栏分类部门 <span className="text-red-500">*</span>
+                      归属分类部门 <span className="text-red-500">*</span>
                     </label>
                     <select
                       required
                       value={mainDeptId}
                       onChange={(e) => setMainDeptId(e.target.value)}
-                      className="px-3 py-2 rounded border border-input-border bg-card-surface text-title text-sm bg-white focus:outline-none focus:ring-1 focus:ring-title focus:border-title"
+                      disabled={!selectedUnitId}
+                      className="px-3 py-2 rounded border border-input-border bg-card-surface text-title text-sm bg-white focus:outline-none focus:ring-1 focus:ring-title focus:border-title h-10 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                      <option value="">-- 请选择所属分类部门 --</option>
-                      {departmentsTree.map((unit) => (
-                        <optgroup key={unit.id} label={unit.name} className="text-title font-bold bg-card-surface">
-                          {unit.departments.map((dept) => (
+                      <option value="">-- 请选择所属部门 --</option>
+                      {selectedUnitId &&
+                        departmentsTree
+                          .find((u) => u.id === selectedUnitId)
+                          ?.departments.map((dept) => (
                             <option key={dept.id} value={dept.id} className="text-title bg-card-surface">
                               {dept.name}
                             </option>
                           ))}
-                        </optgroup>
-                      ))}
                     </select>
                   </div>
                 </div>

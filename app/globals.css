@@ -10,8 +10,8 @@
   --input-border: #d9d9e0;
   --nav-bg: rgba(255, 255, 255, 0.40);
   --sidebar-hover: rgba(0, 0, 0, 0.04);
-  --zpje-brand: #004b97;       /* 浙平建安 Logo 提取深蓝色 */
-  --zpje-accent: #e0520d;      /* 浙平建安 Logo 提取亮橘色 */
+  --zpje-brand: #004085;       /* 浙平建安 Logo 提取深蓝色 (能碳系统标准) */
+  --zpje-accent: #E65C00;      /* 浙平建安 Logo 提取亮橘色 (能碳系统标准) */
 }
 
 [data-theme="dark"] {
@@ -24,8 +24,8 @@
   --input-border: #3a3e45;
   --nav-bg: rgba(13, 13, 18, 0.45);
   --sidebar-hover: rgba(255, 255, 255, 0.05);
-  --zpje-brand: #3b82f6;       /* 暗色模式下使用亮蓝色增强对比度 */
-  --zpje-accent: #f97316;      /* 暗色模式下使用亮橘色增强对比度 */
+  --zpje-brand: #004085;       /* 与亮色模式保持一致 */
+  --zpje-accent: #E65C00;      /* 与亮色模式保持一致 */
 }
 
 @theme inline {

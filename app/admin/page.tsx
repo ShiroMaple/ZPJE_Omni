@@ -1,14 +1,36 @@
 import React from 'react';
 import { prisma } from '@/lib/prisma';
 import { checkAdmin, checkSystemAdmin } from '@/lib/auth';
+import { headers } from 'next/headers';
 import AdminAppRegistry from './AdminAppRegistry';
 import { ShieldAlert, Home } from 'lucide-react';
 
 export const dynamic = 'force-dynamic';
 
 export default async function AdminPage() {
+  const headersList = await headers();
+  const userId = headersList.get('x-user-id') || 'guest';
   const isAdmin = await checkAdmin();
   const isSystemAdmin = await checkSystemAdmin();
+
+  let currentUserInfo = null;
+  if (userId !== 'guest') {
+    const member = await prisma.member.findUnique({
+      where: { loginName: userId },
+      include: {
+        unit: { select: { name: true } },
+        department: { select: { name: true } }
+      }
+    });
+    if (member) {
+      currentUserInfo = {
+        name: member.name,
+        loginName: member.loginName,
+        unitName: member.unit?.name || '未知单位',
+        deptName: member.department?.name || '未知部门',
+      };
+    }
+  }
 
   if (!isAdmin) {
     return (
@@ -197,6 +219,9 @@ export default async function AdminPage() {
       initialWidgets={serializedWidgets}
       isSystemAdmin={isSystemAdmin}
       initialAdminMembers={serializedAdminMembers}
+      userId={userId}
+      userInfo={currentUserInfo}
+      isAdmin={isAdmin}
     />
   );
 }

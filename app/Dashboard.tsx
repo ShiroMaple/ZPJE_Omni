@@ -2,13 +2,13 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { 
-  Search, 
-  ArrowRight, 
-  Leaf, 
-  Clock, 
-  LayoutDashboard, 
-  FileText, 
+import {
+  Search,
+  ArrowRight,
+  Leaf,
+  Clock,
+  LayoutDashboard,
+  FileText,
   Hammer,
   User,
   ShieldCheck,
@@ -168,10 +168,10 @@ function DashboardWidget({ widget }: { widget: WidgetConfig }) {
     fetchWidgetData();
   }, [widget]);
 
-  const widthClass = 
+  const widthClass =
     widget.widthClass === 'col-span-3' ? 'md:col-span-3' :
-    widget.widthClass === 'col-span-2' ? 'md:col-span-2' :
-    'col-span-1';
+      widget.widthClass === 'col-span-2' ? 'md:col-span-2' :
+        'col-span-1';
 
   return (
     <div className={`p-4 rounded-xl bg-card-surface border border-card-border shadow-sm flex flex-col justify-between ${widthClass} min-h-[12rem] transition-all`}>
@@ -184,8 +184,8 @@ function DashboardWidget({ widget }: { widget: WidgetConfig }) {
 
       <div className="flex-1 flex flex-col justify-center">
         {widget.type === 'iframe' ? (
-          <iframe 
-            src={widget.url} 
+          <iframe
+            src={widget.url}
             className="w-full h-28 border-0 rounded-lg overflow-hidden"
             title={widget.title}
           />
@@ -205,10 +205,9 @@ function DashboardWidget({ widget }: { widget: WidgetConfig }) {
                 <span className="text-[10px] text-text-sec truncate">{m.label}</span>
                 <div className="flex items-baseline justify-between mt-0.5 gap-1.5">
                   <span className="text-xs lg:text-sm font-extrabold text-title font-mono">{m.value}</span>
-                  <span className={`text-[9px] font-bold ${
-                    m.trend === 'up' ? 'text-emerald-500' :
+                  <span className={`text-[9px] font-bold ${m.trend === 'up' ? 'text-emerald-500' :
                     m.trend === 'down' ? 'text-red-500' : 'text-text-sec'
-                  }`}>
+                    }`}>
                     {m.change}
                   </span>
                 </div>
@@ -278,7 +277,7 @@ export default function Dashboard({ userId, initialApps, departments, isAdmin, u
       const activeCookie = document.cookie
         .split('; ')
         .find((row) => row.startsWith('session_active='));
-      
+
       if (!activeCookie) {
         console.warn('检测到会话已过期。执行自动单点登出...');
         handleLogout();
@@ -317,8 +316,8 @@ export default function Dashboard({ userId, initialApps, departments, isAdmin, u
   const mappedApps: AppConfig[] = initialApps.map((app) => {
     const IconComponent = ICON_MAP[app.icon || ''] || DEFAULT_ICON;
     const colorClasses = COLOR_MAP[app.key] || DEFAULT_COLOR;
-    const status: 'active' | 'maintenance' | 'offline' = app.isMaintenance 
-      ? 'maintenance' 
+    const status: 'active' | 'maintenance' | 'offline' = app.isMaintenance
+      ? 'maintenance'
       : (app.healthStatus === 'UNHEALTHY' ? 'offline' : 'active');
 
     return {
@@ -346,11 +345,11 @@ export default function Dashboard({ userId, initialApps, departments, isAdmin, u
 
   // Filter apps by Search Query and Department Filter
   const filteredApps = mappedApps.filter((app) => {
-    const matchesSearch = 
+    const matchesSearch =
       app.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       app.tag.toLowerCase().includes(searchQuery.toLowerCase()) ||
       app.description.toLowerCase().includes(searchQuery.toLowerCase());
-      
+
     const matchesDept = activeDeptId === null || app.mainDeptId === activeDeptId;
 
     return matchesSearch && matchesDept;
@@ -369,7 +368,7 @@ export default function Dashboard({ userId, initialApps, departments, isAdmin, u
     e.stopPropagation();
 
     const isFav = favoriteIds.includes(appId);
-    const nextFavorites = isFav 
+    const nextFavorites = isFav
       ? favoriteIds.filter(id => id !== appId)
       : [...favoriteIds, appId];
     setFavoriteIds(nextFavorites);
@@ -408,7 +407,7 @@ export default function Dashboard({ userId, initialApps, departments, isAdmin, u
   // Fuzzy match command items
   const getCommandItems = (): CommandItem[] => {
     const items: CommandItem[] = [];
-    
+
     mappedApps.forEach(app => {
       items.push({
         id: `app-${app.id}`,
@@ -511,7 +510,7 @@ export default function Dashboard({ userId, initialApps, departments, isAdmin, u
     const parts = text.split(new RegExp(`(${query})`, 'gi'));
     return (
       <span>
-        {parts.map((part, i) => 
+        {parts.map((part, i) =>
           part.toLowerCase() === query.toLowerCase()
             ? <mark key={i} className="bg-zpje-brand/15 text-zpje-brand font-semibold rounded px-0.5">{part}</mark>
             : part
@@ -541,9 +540,8 @@ export default function Dashboard({ userId, initialApps, departments, isAdmin, u
             recordAccess(app.id);
           }
         }}
-        className={`group relative flex flex-col justify-between p-4 rounded-xl bg-card-surface border border-card-border ${colorClasses.borderHover} transition-all duration-300 hover:-translate-y-0.5 hover:shadow-md ${
-          isMaintenanceMode ? 'opacity-40 select-none' : ''
-        } ${isOffline ? 'opacity-50' : ''}`}
+        className={`group relative flex flex-col justify-between p-4 rounded-xl bg-card-surface border border-card-border ${colorClasses.borderHover} transition-all duration-300 hover:-translate-y-0.5 hover:shadow-md ${isMaintenanceMode ? 'opacity-40 select-none' : ''
+          } ${isOffline ? 'opacity-50' : ''}`}
       >
         <div>
           {/* Icon & Status & Favorite Button */}
@@ -551,28 +549,26 @@ export default function Dashboard({ userId, initialApps, departments, isAdmin, u
             <div className={`p-2 rounded-lg ${colorClasses.iconBg} ${colorClasses.iconText} group-hover:scale-105 transition-transform`}>
               <IconComponent className="w-5 h-5" />
             </div>
-            
+
             <div className="flex items-center gap-2">
               {/* Status Badge */}
-              <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-sidebar-hover text-[10px] text-text-sec">
-                <span className={`w-1.5 h-1.5 rounded-full ${
-                  app.status === 'active' ? 'bg-emerald-500 animate-pulse' :
+              <div className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-sidebar-hover text-xs text-text-sec">
+                <span className={`w-1.5 h-1.5 rounded-full ${app.status === 'active' ? 'bg-emerald-500 animate-pulse' :
                   app.status === 'maintenance' ? 'bg-amber-500' : 'bg-red-500'
-                }`} />
+                  }`} />
                 <span>
                   {app.status === 'active' ? '运行中' :
-                   app.status === 'maintenance' ? '维护中' : '已离线'}
+                    app.status === 'maintenance' ? '维护中' : '已离线'}
                 </span>
               </div>
 
               {/* Favorite Star Button */}
               <button
                 onClick={(e) => toggleFavorite(e, app.id)}
-                className={`p-1.5 rounded-lg border transition-all duration-200 ${
-                  isFav 
-                    ? 'bg-zpje-accent/10 border-zpje-accent/20 text-zpje-accent' 
-                    : 'bg-sidebar-hover border-transparent text-text-sec hover:text-zpje-accent hover:bg-zpje-accent/5'
-                }`}
+                className={`p-1.5 rounded-lg border transition-all duration-200 ${isFav
+                  ? 'bg-zpje-accent/10 border-zpje-accent/20 text-zpje-accent'
+                  : 'bg-sidebar-hover border-transparent text-text-sec hover:text-zpje-accent hover:bg-zpje-accent/5'
+                  }`}
                 title={isFav ? '取消收藏' : '收藏应用'}
               >
                 <Star className={`w-3.5 h-3.5 ${isFav ? 'fill-zpje-accent' : ''}`} />
@@ -584,16 +580,16 @@ export default function Dashboard({ userId, initialApps, departments, isAdmin, u
           <h3 className="text-base font-bold text-title group-hover:text-zpje-brand transition-colors flex items-center gap-1">
             {app.name}
           </h3>
-          <div className="text-[10px] text-text-sec font-semibold tracking-wider uppercase mt-0.5">
+          <div className="text-xs text-text-sec font-bold tracking-wider uppercase mt-0.5">
             {app.tag}
           </div>
-          <p className="mt-2 text-xs text-text-sec leading-relaxed min-h-[3rem] line-clamp-2">
+          <p className="mt-2 text-sm text-text-sec leading-relaxed min-h-[3rem] line-clamp-2">
             {app.description}
           </p>
         </div>
 
         {/* Footer Trigger */}
-        <div className="mt-3 pt-2.5 border-t border-card-border flex items-center justify-between text-xs font-semibold">
+        <div className="mt-3 pt-2.5 border-t border-card-border flex items-center justify-between text-sm font-semibold">
           <span className="text-text-sec group-hover:text-title transition-colors">
             {isMaintenanceMode ? '系统维护中' : (isOffline ? '服务已离线' : '进入系统')}
           </span>
@@ -604,7 +600,7 @@ export default function Dashboard({ userId, initialApps, departments, isAdmin, u
             </div>
           )}
           {isAdmin && (isMaintenanceMode || isOffline) && (
-            <span className="text-[10px] text-zpje-brand font-medium">
+            <span className="text-xs text-zpje-brand font-medium">
               点击管理配置
             </span>
           )}
@@ -614,9 +610,8 @@ export default function Dashboard({ userId, initialApps, departments, isAdmin, u
   };
 
   return (
-    <div className="relative min-h-screen text-text-main font-sans flex flex-col justify-between overflow-x-hidden transition-colors duration-200">
+    <div className="relative h-screen w-screen text-text-main font-sans flex overflow-hidden transition-colors duration-200 bg-canvas">
       {/* Background canvas */}
-      <div className="absolute inset-0 -z-10 bg-canvas transition-colors duration-200" />
       {mounted && theme === 'dark' && (
         <>
           <div className="absolute inset-0 -z-10 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-blue-900/10 via-zinc-950 to-black" />
@@ -625,215 +620,205 @@ export default function Dashboard({ userId, initialApps, departments, isAdmin, u
         </>
       )}
 
-      {/* Header */}
-      <header className="sticky top-0 z-40 w-full border-b border-card-border bg-nav-bg backdrop-blur-md transition-colors duration-200">
-        <div className="max-w-[1800px] w-full mx-auto px-6 md:px-12 h-20 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="relative flex items-center justify-center w-10 h-10 rounded-xl overflow-hidden bg-white shadow-sm border border-card-border">
-              <img src="/logo_zpje.jpg" alt="建安万维" className="w-full h-full object-cover" />
-            </div>
-            <div>
-              <span className="text-xl font-bold tracking-wider text-title">建安万维</span>
-              <span className="text-xs block text-text-sec font-medium tracking-widest -mt-1">PORTAL</span>
-            </div>
-          </div>
+      {/* Desktop Sidebar (Left side, full height, collapsible) */}
+      <Sidebar
+        departments={departments}
+        activeDeptId={activeDeptId}
+        onSelectDept={selectDept}
+        appsCountMap={appsCountMap}
+        totalAppsCount={totalAppsCount}
+      />
 
-          {/* User Status & Controls */}
-          <div className="flex items-center gap-3">
-            {/* Command Palette Indicator badge */}
-            <button
-              onClick={() => setIsCommandPaletteOpen(true)}
-              className="hidden md:flex items-center gap-1.5 px-3 py-2 rounded-xl bg-card-surface border border-card-border text-xs text-text-sec hover:text-title hover:bg-sidebar-hover transition-all"
-              title="打开全局指令面板"
-            >
-              <Command className="w-3.5 h-3.5" />
-              <span className="font-mono">Ctrl K</span>
-            </button>
+      {/* Right Content Pane */}
+      <div className="flex-1 flex flex-col h-full overflow-hidden min-w-0">
 
-            {/* Theme Toggle Button */}
-            {mounted && (
-              <button
-                onClick={toggleTheme}
-                className="w-10 h-10 rounded-xl bg-card-surface border border-card-border text-title hover:bg-sidebar-hover flex items-center justify-center transition-all"
-                title={theme === 'light' ? '切换至暗色模式' : '切换至亮色模式'}
-              >
-                {theme === 'light' ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
-              </button>
-            )}
-
-            {isAdmin && (
-              <a
-                href="/admin"
-                className="px-4 py-2 rounded-xl bg-card-surface border border-card-border text-title hover:bg-sidebar-hover flex items-center gap-2 transition-all text-sm font-medium"
-                title="管理应用注册中心"
-              >
-                <Settings className="w-4 h-4" />
-                <span className="hidden sm:inline">管理后台</span>
-              </a>
-            )}
-
-            {/* Hover details user status badge */}
-            <div className="relative group">
-              <div className="px-4 py-2 rounded-xl bg-card-surface border border-card-border flex items-center gap-3 transition-all hover:bg-sidebar-hover cursor-default">
-                <div className="relative flex items-center justify-center">
-                  <span className={`w-2.5 h-2.5 rounded-full ${isGuest ? 'bg-amber-400 shadow-amber-400/50' : 'bg-emerald-400 shadow-emerald-400/50'} animate-pulse`} />
-                  <span className={`absolute inline-flex h-full w-full rounded-full opacity-75 animate-ping ${isGuest ? 'bg-amber-400' : 'bg-emerald-400'}`} />
-                </div>
-                <div className="flex items-center gap-2">
-                  <User className="w-4 h-4 text-text-sec" />
-                  <span className="text-sm font-medium text-title">
-                    {isGuest ? '游客模式' : (userInfo?.name || userId)}
+        {/* Right Header */}
+        <header className="w-full border-b border-card-border bg-nav-bg backdrop-blur-md transition-colors duration-200 h-16 shrink-0 z-40">
+          <div className="w-full px-6 md:px-10 h-full flex items-center justify-between">
+            {/* Header left side (Breadcrumbs or title) */}
+            <div className="flex items-center gap-2 text-lg font-bold text-text-sec">
+              <span className="text-title">门户首页</span>
+              {activeDeptId && (
+                <>
+                  <span className="text-text-sec/50">/</span>
+                  <span className="text-zpje-accent dark:text-zpje-accent/90">
+                    {departments.find(d => d.id === activeDeptId)?.name || ''}
                   </span>
-                </div>
-                {isGuest && (
-                  <span className="text-xs px-2 py-0.5 rounded bg-amber-500/10 text-amber-600 font-medium border border-amber-500/20">
-                    Demo
-                  </span>
-                )}
-              </div>
+                </>
+              )}
+            </div>
 
-              {/* Hover Popover Detail Card */}
-              {!isGuest && userInfo && (
-                <div className="absolute right-0 top-full mt-2 w-72 bg-card-surface border border-card-border rounded-2xl shadow-xl p-4 text-text-main opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50">
-                  <div className="flex flex-col gap-3">
-                    <div className="border-b border-card-border pb-2 flex items-center gap-2.5">
-                      <div className="w-9 h-9 rounded-full bg-zpje-brand/10 text-zpje-brand flex items-center justify-center font-bold text-sm">
-                        {userInfo.name.slice(-2)}
-                      </div>
-                      <div>
-                        <h4 className="font-bold text-title text-sm">{userInfo.name}</h4>
-                        <span className="text-xs text-text-sec font-mono">@{userInfo.loginName}</span>
-                      </div>
-                    </div>
-                    
-                    <div className="flex flex-col gap-2 text-xs">
-                      <div className="flex items-start justify-between gap-2">
-                        <span className="text-text-sec shrink-0">所属单位:</span>
-                        <span className="font-medium text-right text-title">{userInfo.unitName}</span>
-                      </div>
-                      <div className="flex items-start justify-between gap-2">
-                        <span className="text-text-sec shrink-0">所属部门:</span>
-                        <span className="font-medium text-right text-title">{userInfo.deptName}</span>
-                      </div>
-                      <div className="flex items-start justify-between gap-2">
-                        <span className="text-text-sec shrink-0">权限角色:</span>
-                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${
-                          isAdmin 
-                            ? 'bg-red-500/10 text-red-500 border-red-500/20' 
-                            : 'bg-zpje-brand/10 text-zpje-brand border-zpje-brand/20'
-                        }`}>
-                          {isAdmin ? '管理员' : '普通用户'}
-                        </span>
-                      </div>
+            {/* Header controls */}
+            <div className="flex items-center gap-3">
+              {/* Theme Toggle Button */}
+              {mounted && (
+                <button
+                  onClick={toggleTheme}
+                  className="w-10 h-10 rounded-xl bg-card-surface border border-card-border text-title hover:bg-sidebar-hover flex items-center justify-center transition-all cursor-pointer"
+                  title={theme === 'light' ? '切换至暗色模式' : '切换至亮色模式'}
+                >
+                  {theme === 'light' ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
+                </button>
+              )}
+
+              {isAdmin && (
+                <a
+                  href="/admin"
+                  className="px-4 py-2 rounded-xl bg-zpje-accent text-white border border-transparent hover:opacity-90 flex items-center gap-2 transition-all text-sm font-bold shadow-sm"
+                  title="管理应用注册中心"
+                >
+                  <Settings className="w-4 h-4" />
+                  <span className="hidden sm:inline">管理后台</span>
+                </a>
+              )}
+
+              {/* Seeyon OA SSO link button with hover menu entrance tooltip */}
+              {isGuest && (
+                <div className="relative group">
+                  <a
+                    href={process.env.NODE_ENV === 'development' ? '/api/sso/seeyon?ticket=dev-zadmin' : 'https://oa.izpje.com/'}
+                    target={process.env.NODE_ENV === 'development' ? '_self' : '_blank'}
+                    rel="noopener noreferrer"
+                    className="px-4 py-2 rounded-xl bg-zpje-accent text-white hover:opacity-90 flex items-center gap-1.5 transition-all text-sm font-bold cursor-pointer shadow-sm shrink-0"
+                    title={process.env.NODE_ENV === 'development' ? '开发模式下点击直接切换至zadmin系统管理员' : '打开致远 OA 单点登录'}
+                  >
+                    <ExternalLink className="w-4 h-4" />
+                    <span>通过OA登录</span>
+                  </a>
+                  
+                  {/* Popover image under the button */}
+                  <div className="absolute left-1/2 -translate-x-1/2 top-full mt-2 w-80 bg-card-surface border border-card-border rounded-xl shadow-2xl p-3 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-300 z-50 pointer-events-none">
+                    <div className="text-xs text-text-sec mb-2 text-center font-bold">OA 菜单入口指引:</div>
+                    <div className="relative w-full rounded-lg overflow-hidden border border-card-border bg-black/5">
+                      <img
+                        src="/tip_entrance.png"
+                        alt="OA 菜单入口（可能位于最后）"
+                        className="w-full h-auto object-contain"
+                      />
                     </div>
                   </div>
                 </div>
               )}
+
+              {/* Hover details user status badge */}
+              <div className="relative group">
+                <div className="px-4 py-2 rounded-xl bg-card-surface border border-card-border flex items-center gap-3 transition-all hover:bg-sidebar-hover cursor-default">
+                  <div className="relative flex items-center justify-center">
+                    <span className={`w-2.5 h-2.5 rounded-full ${isGuest ? 'bg-amber-400 shadow-amber-400/50' : 'bg-emerald-400 shadow-emerald-400/50'} animate-pulse`} />
+                    <span className={`absolute inline-flex h-full w-full rounded-full opacity-75 animate-ping ${isGuest ? 'bg-amber-400' : 'bg-emerald-400'}`} />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <User className="w-4 h-4 text-text-sec" />
+                    <span className="text-sm font-semibold text-title">
+                      {isGuest ? '游客模式' : (userInfo?.name || userId)}
+                    </span>
+                  </div>
+                  {isGuest && (
+                    <span className="text-xs px-2 py-0.5 rounded bg-amber-500/10 text-amber-600 font-bold border border-amber-500/20">
+                      Demo
+                    </span>
+                  )}
+                </div>
+
+                {/* Hover Popover Detail Card */}
+                {!isGuest && userInfo && (
+                  <div className="absolute right-0 top-full mt-2 w-72 bg-card-surface border border-card-border rounded-2xl shadow-xl p-4 text-text-main opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50">
+                    <div className="flex flex-col gap-3">
+                      <div className="border-b border-card-border pb-2 flex items-center gap-2.5">
+                        <div className="w-9 h-9 rounded-full bg-zpje-brand/10 text-zpje-brand flex items-center justify-center font-bold text-sm">
+                          {userInfo.name.slice(-2)}
+                        </div>
+                        <div>
+                          <h4 className="font-bold text-title text-sm">{userInfo.name}</h4>
+                          <span className="text-xs text-text-sec font-mono">@{userInfo.loginName}</span>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-col gap-2 text-sm">
+                        <div className="flex items-start justify-between gap-2">
+                          <span className="text-text-sec shrink-0">所属单位:</span>
+                          <span className="font-semibold text-right text-title">{userInfo.unitName}</span>
+                        </div>
+                        <div className="flex items-start justify-between gap-2">
+                          <span className="text-text-sec shrink-0">所属部门:</span>
+                          <span className="font-semibold text-right text-title">{userInfo.deptName}</span>
+                        </div>
+                        <div className="flex items-start justify-between gap-2">
+                          <span className="text-text-sec shrink-0">权限角色:</span>
+                          <span className={`px-2 py-0.5 rounded-full text-xs font-bold border ${isAdmin
+                            ? 'bg-red-500/10 text-red-500 border-red-500/20'
+                            : 'bg-zpje-brand/10 text-zpje-brand border-zpje-brand/20'
+                            }`}>
+                            {isAdmin ? '管理员' : '普通用户'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {!isGuest && (
+                <button
+                  onClick={handleLogout}
+                  disabled={isLoggingOut}
+                  className="px-4 py-2 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-500 border border-red-500/20 flex items-center gap-2 transition-all text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                  title="退出登录并通知致远 OA"
+                >
+                  <LogOut className="w-4 h-4" />
+                  <span>{isLoggingOut ? '注销中...' : '退出'}</span>
+                </button>
+              )}
+            </div>
+          </div>
+        </header>
+
+        {/* Scrollable Content View */}
+        <div className="flex-1 overflow-y-auto w-full px-6 md:px-10 py-8 flex flex-col gap-8 max-w-[1800px]">
+
+          {/* Banner + Search Row */}
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-6 border-b border-card-border pb-6 shrink-0">
+            <div>
+              <h1 className="text-2xl md:text-3xl font-extrabold tracking-tight text-title">
+                统一数字化应用工作台
+              </h1>
+              <p className="mt-1.5 text-sm text-text-sec">
+                欢迎使用建安万维门户。此处汇集了公司核心数字化生产与管理系统。
+              </p>
             </div>
 
-            {!isGuest && (
+            {/* Search Bar */}
+            <div className="flex items-center gap-3 w-full md:w-auto shrink-0">
+              <div className="relative w-full md:w-80">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <Search className="h-4 w-4 text-text-sec" />
+                </div>
+                <input
+                  type="text"
+                  placeholder="搜索应用名称或功能..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="block w-full pl-9 pr-14 py-2 rounded-xl bg-card-surface border border-input-border text-title placeholder-text-sec focus:outline-none focus:ring-1 focus:ring-title text-sm"
+                />
+                <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+                  <kbd className="hidden sm:inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded border border-input-border bg-sidebar-hover text-xs font-mono text-text-sec">
+                    Ctrl K
+                  </kbd>
+                </div>
+              </div>
               <button
-                onClick={handleLogout}
-                disabled={isLoggingOut}
-                className="px-4 py-2 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-500 border border-red-500/20 flex items-center gap-2 transition-all text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-                title="退出登录并通知致远 OA"
+                onClick={() => setIsMobileSidebarOpen(true)}
+                className="lg:hidden px-3.5 py-2 rounded-xl bg-card-surface border border-input-border hover:bg-sidebar-hover transition-all text-sm text-title flex items-center gap-1.5 cursor-pointer shrink-0 animate-pulse"
               >
-                <LogOut className="w-4 h-4" />
-                <span>{isLoggingOut ? '注销中...' : '退出'}</span>
+                <SlidersHorizontal className="w-3.5 h-3.5" />
+                <span>部门</span>
               </button>
-            )}
-          </div>
-        </div>
-      </header>
-
-      {/* Main Content */}
-      <main className="max-w-[1800px] w-full mx-auto px-6 md:px-12 py-12 flex-1 flex flex-col gap-12">
-        {/* Banner Section */}
-        <div className="text-center md:text-left md:flex md:items-center md:justify-between gap-6 border-b border-card-border pb-10">
-          <div className="max-w-2xl">
-            <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight md:tracking-[-1.5px] text-title transition-colors duration-200">
-              统一数字化应用工作台
-            </h1>
-            <p className="mt-4 text-lg text-text-sec leading-relaxed transition-colors duration-200">
-              欢迎使用建安万维门户。此处汇集了公司核心数字化生产与管理系统，实现单点登录与无感访问切换。
-            </p>
-          </div>
-
-          {/* Search Bar */}
-          <div className="mt-8 md:mt-0 flex items-center gap-3 w-full md:w-auto">
-            <div className="relative flex-1 md:w-80">
-              <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
-                <Search className="h-5 w-5 text-text-sec" />
-              </div>
-              <input
-                type="text"
-                placeholder="搜索应用名称或功能..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="block w-full pl-11 pr-16 py-3 rounded-2xl bg-card-surface border border-input-border text-title placeholder-text-sec focus:outline-none focus:ring-2 focus:ring-title/20 focus:border-title transition-all text-sm"
-              />
-              <div className="absolute inset-y-0 right-0 pr-3.5 flex items-center pointer-events-none">
-                <kbd className="hidden sm:inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded border border-input-border bg-sidebar-hover text-[10px] font-mono text-text-sec">
-                  Ctrl K
-                </kbd>
-              </div>
             </div>
-            <button
-              onClick={() => setIsMobileSidebarOpen(true)}
-              className="lg:hidden px-4 py-3 rounded-2xl bg-card-surface border border-input-border hover:bg-sidebar-hover transition-all text-sm text-title flex items-center gap-1.5"
-            >
-              <SlidersHorizontal className="w-4 h-4" />
-              <span>部门</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Content Layout: Sidebar + Grid */}
-        <div className="flex flex-col lg:flex-row gap-8 items-start w-full">
-          {/* Desktop Sidebar */}
-          <div className="hidden lg:block w-64 shrink-0">
-            <Sidebar
-              departments={departments}
-              activeDeptId={activeDeptId}
-              onSelectDept={selectDept}
-              appsCountMap={appsCountMap}
-              totalAppsCount={totalAppsCount}
-            />
           </div>
 
-          {/* Mobile Sidebar Drawer Overlay */}
-          {isMobileSidebarOpen && (
-            <div className="fixed inset-0 z-50 lg:hidden flex justify-end">
-              <div 
-                className="fixed inset-0 bg-black/40 backdrop-blur-sm transition-opacity" 
-                onClick={() => setIsMobileSidebarOpen(false)}
-              />
-              <div className="relative w-72 h-full bg-card-surface border-l border-card-border p-6 flex flex-col gap-6 shadow-2xl animate-in slide-in-from-right duration-200">
-                <div className="flex items-center justify-between">
-                  <h3 className="font-bold text-title">选择所属部门</h3>
-                  <button 
-                    onClick={() => setIsMobileSidebarOpen(false)}
-                    className="p-1 rounded-full hover:bg-sidebar-hover text-text-sec hover:text-title"
-                  >
-                    <X className="w-5 h-5" />
-                  </button>
-                </div>
-                <div className="overflow-y-auto flex-1">
-                  <Sidebar
-                    departments={departments}
-                    activeDeptId={activeDeptId}
-                    onSelectDept={selectDept}
-                    appsCountMap={appsCountMap}
-                    totalAppsCount={totalAppsCount}
-                  />
-                </div>
-              </div>
-            </div>
-          )}
+          {/* Main Display grids */}
+          <div className="flex-1 w-full flex flex-col gap-8 pb-10">
 
-          {/* Apps Grid Panel */}
-          <div className="flex-1 w-full flex flex-col gap-8">
-            
             {/* 3.2 Dynamic Widgets Grid Area */}
             {widgets && widgets.length > 0 && (
               <div className="flex flex-col gap-4">
@@ -866,7 +851,7 @@ export default function Dashboard({ userId, initialApps, departments, isAdmin, u
             <div className="flex flex-col gap-6">
               <div className="flex items-center justify-between">
                 <h2 className="text-lg font-semibold tracking-wide text-title">
-                  可用子系统 ({filteredApps.length})
+                  可用应用 ({filteredApps.length})
                 </h2>
               </div>
 
@@ -886,29 +871,78 @@ export default function Dashboard({ userId, initialApps, departments, isAdmin, u
             </div>
           </div>
         </div>
-      </main>
+      </div>
 
-      {/* Footer */}
-      <footer className="border-t border-card-border bg-card-surface py-8 text-center text-xs text-text-sec transition-colors duration-200">
-        <div className="max-w-[1800px] w-full mx-auto px-6 md:px-12 flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div>
-            © 2026 Omni Portal. All rights reserved.
-          </div>
-          <div className="flex items-center gap-6">
-            <a href="https://oa.izpje.com/" target="_blank" rel="noopener noreferrer" className="hover:text-title transition-colors flex items-center gap-1">
-              致远 OA <ExternalLink className="w-3 h-3" />
-            </a>
-            <span className="text-card-border">|</span>
-            <span>统一身份认证安全托管</span>
+
+
+      {/* Mobile Sidebar Drawer Overlay */}
+      {isMobileSidebarOpen && (
+        <div className="fixed inset-0 z-50 lg:hidden flex justify-end text-text-main">
+          <div
+            className="fixed inset-0 bg-black/40 backdrop-blur-sm transition-opacity"
+            onClick={() => setIsMobileSidebarOpen(false)}
+          />
+          <div className="relative w-72 h-full bg-card-surface border-l border-card-border p-6 flex flex-col gap-6 shadow-2xl animate-in slide-in-from-right duration-200">
+            <div className="flex items-center justify-between">
+              <h3 className="font-bold text-title">选择所属部门</h3>
+              <button
+                onClick={() => setIsMobileSidebarOpen(false)}
+                className="p-1 rounded-full hover:bg-sidebar-hover text-text-sec hover:text-title cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="overflow-y-auto flex-1">
+              <nav className="flex flex-col gap-1.5">
+                <button
+                  onClick={() => selectDept(null)}
+                  className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl border text-xs font-bold transition-all text-left cursor-pointer ${activeDeptId === null
+                    ? 'bg-zpje-accent border-transparent text-white shadow-sm dark:bg-zpje-accent/20 dark:text-zpje-accent dark:border-zpje-accent/30'
+                    : 'bg-transparent border-transparent text-text-sec hover:text-title hover:bg-sidebar-hover'
+                    }`}
+                >
+                  <span>全部应用</span>
+                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-mono ${activeDeptId === null
+                    ? 'bg-white/20 text-white dark:bg-zpje-accent/20 dark:text-zpje-accent'
+                    : 'bg-white/10 text-white/80 dark:bg-sidebar-hover dark:text-text-sec'
+                    }`}>
+                    {totalAppsCount}
+                  </span>
+                </button>
+
+                {departments.map((dept) => {
+                  const count = appsCountMap[dept.id] || 0;
+                  const isActive = activeDeptId === dept.id;
+                  return (
+                    <button
+                      key={dept.id}
+                      onClick={() => selectDept(dept.id)}
+                      className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl border text-xs font-bold transition-all text-left cursor-pointer ${isActive
+                        ? 'bg-zpje-accent border-transparent text-white shadow-sm dark:bg-zpje-accent/20 dark:text-zpje-accent dark:border-zpje-accent/30'
+                        : 'bg-transparent border-transparent text-text-sec hover:text-title hover:bg-sidebar-hover'
+                        }`}
+                    >
+                      <span className="truncate">{dept.name}</span>
+                      <span className={`text-[10px] px-2 py-0.5 rounded-full font-mono ${isActive
+                        ? 'bg-white/20 text-white dark:bg-zpje-accent/20 dark:text-zpje-accent'
+                        : 'bg-white/10 text-white/80 dark:bg-sidebar-hover dark:text-text-sec'
+                        }`}>
+                        {count}
+                      </span>
+                    </button>
+                  );
+                })}
+              </nav>
+            </div>
           </div>
         </div>
-      </footer>
+      )}
 
       {/* Command Palette Overlay Dialog */}
       {isCommandPaletteOpen && (
         <div className="fixed inset-0 z-50 flex items-start justify-center pt-[15vh] p-4 bg-black/40 backdrop-blur-sm transition-all">
-          <div 
-            className="fixed inset-0 bg-transparent" 
+          <div
+            className="fixed inset-0 bg-transparent"
             onClick={() => setIsCommandPaletteOpen(false)}
           />
           <div className="relative w-full max-w-2xl bg-card-surface border border-card-border shadow-2xl rounded-2xl overflow-hidden flex flex-col max-h-[60vh] animate-in fade-in slide-in-from-top-4 duration-200">
@@ -942,11 +976,10 @@ export default function Dashboard({ userId, initialApps, departments, isAdmin, u
                       key={item.id}
                       onClick={() => executeCommand(item)}
                       onMouseEnter={() => setActiveCmdIndex(idx)}
-                      className={`w-full flex items-center justify-between p-3 rounded-xl transition-all text-left ${
-                        isActive 
-                          ? 'bg-zpje-brand/10 text-zpje-brand font-medium' 
-                          : 'bg-transparent text-text-main hover:bg-sidebar-hover/40'
-                      }`}
+                      className={`w-full flex items-center justify-between p-3 rounded-xl transition-all text-left ${isActive
+                        ? 'bg-zpje-brand/10 text-zpje-brand font-medium'
+                        : 'bg-transparent text-text-main hover:bg-sidebar-hover/40'
+                        }`}
                     >
                       <div className="flex items-center gap-3 min-w-0">
                         {item.type === 'app' && item.appObject ? (
@@ -998,24 +1031,23 @@ export default function Dashboard({ userId, initialApps, departments, isAdmin, u
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
           <div className="w-full max-w-md bg-card-surface rounded-lg border border-card-border shadow-xl p-6 text-text-main animate-in fade-in zoom-in duration-200">
             <div className="flex items-center gap-3 mb-4">
-              <div className={`p-2.5 rounded-full ${
-                activeAlertApp.status === 'maintenance' 
-                  ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400' 
-                  : 'bg-red-500/10 text-red-600 dark:text-red-400'
-              }`}>
+              <div className={`p-2.5 rounded-full ${activeAlertApp.status === 'maintenance'
+                ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400'
+                : 'bg-red-500/10 text-red-600 dark:text-red-400'
+                }`}>
                 <AlertTriangle className="w-6 h-6" />
               </div>
               <h3 className="text-lg font-bold text-title">
                 {activeAlertApp.status === 'maintenance' ? '系统维护中' : '系统已离线'}
               </h3>
             </div>
-            
+
             <p className="text-sm text-text-sec leading-relaxed mb-6">
               {activeAlertApp.status === 'maintenance'
                 ? `应用 “${activeAlertApp.name}” 当前处于维护模式。为了保障您的正常使用及数据安全，请稍后再试。`
                 : `系统检测到应用 “${activeAlertApp.name}” 的后台服务或接口当前响应超时。工程师正在紧急抢修中，请稍后再试。`}
             </p>
-            
+
             <div className="flex items-center justify-end gap-3">
               {isAdmin ? (
                 <>
