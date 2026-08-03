@@ -166,6 +166,7 @@ export default async function AdminPage() {
     description: app.description || null,
     url: app.url,
     icon: app.icon || null,
+    color: app.color || null,
     isMaintenance: app.isMaintenance,
     sortOrder: app.sortOrder,
     mainDeptId: app.mainDeptId || null,

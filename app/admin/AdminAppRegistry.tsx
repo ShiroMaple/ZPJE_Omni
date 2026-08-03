@@ -141,14 +141,41 @@ const ICON_PRESETS = [
   'Hammer'
 ];
 
-const APP_COLORS = [
-  { value: 'emerald', label: '翡翠绿 (Emerald)', bg: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' },
-  { value: 'blue', label: '宝石蓝 (Blue)', bg: 'bg-blue-500/10 text-blue-600 dark:text-blue-400' },
-  { value: 'amber', label: '琥珀黄 (Amber)', bg: 'bg-amber-500/10 text-amber-600 dark:text-amber-400' },
-  { value: 'purple', label: '丁香紫 (Purple)', bg: 'bg-purple-500/10 text-purple-600 dark:text-purple-400' },
-  { value: 'cyan', label: '青蓝色 (Cyan)', bg: 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400' },
-  { value: 'slate', label: '板岩灰 (Slate)', bg: 'bg-slate-500/10 text-slate-600 dark:text-slate-400' }
+const APP_COLORS_PRESETS = [
+  { value: '#10B981', label: '翡翠绿' },
+  { value: '#3B82F6', label: '宝石蓝' },
+  { value: '#F59E0B', label: '琥珀黄' },
+  { value: '#8B5CF6', label: '丁香紫' },
+  { value: '#06B6D4', label: '青蓝色' },
+  { value: '#64748B', label: '板岩灰' }
 ];
+
+const LEGACY_COLOR_HEX: Record<string, string> = {
+  emerald: '#10B981',
+  blue: '#3B82F6',
+  amber: '#F59E0B',
+  purple: '#8B5CF6',
+  cyan: '#06B6D4',
+  slate: '#64748B',
+  CarbonPlatform: '#10B981',
+  FabFlow: '#3B82F6',
+  supos_Kanban: '#F59E0B',
+  DocEx: '#8B5CF6',
+  WeldSnap: '#06B6D4',
+};
+
+const getAppHexColor = (color: string | null | undefined, key: string): string => {
+  if (color && color.startsWith('#')) return color;
+  return LEGACY_COLOR_HEX[color || ''] || LEGACY_COLOR_HEX[key] || '#64748B';
+};
+
+const getRgba = (hex: string, alpha: number) => {
+  const cleanHex = hex.startsWith('#') ? hex : '#64748B';
+  const r = parseInt(cleanHex.slice(1, 3), 16) || 100;
+  const g = parseInt(cleanHex.slice(3, 5), 16) || 116;
+  const b = parseInt(cleanHex.slice(5, 7), 16) || 139;
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+};
 
 export default function AdminAppRegistry({
   initialApps,
@@ -299,7 +326,7 @@ export default function AdminAppRegistry({
     setIcon('LayoutDashboard');
     
     // Automatically select a random theme color on App creation
-    const colorsList = ['emerald', 'blue', 'amber', 'purple', 'cyan', 'slate'];
+    const colorsList = ['#10B981', '#3B82F6', '#F59E0B', '#8B5CF6', '#06B6D4', '#64748B'];
     const randomColor = colorsList[Math.floor(Math.random() * colorsList.length)];
     setColor(randomColor);
 
@@ -947,7 +974,13 @@ export default function AdminAppRegistry({
                           <td className="p-4 text-center font-mono text-text-sec/80">{app.sortOrder}</td>
                           <td className="p-4">
                             <div className="flex items-center gap-2.5">
-                              <div className="p-2 rounded bg-sidebar-hover text-text-sec flex items-center justify-center w-8 h-8 shrink-0">
+                              <div 
+                                className="p-2 rounded flex items-center justify-center w-8 h-8 shrink-0 font-semibold"
+                                style={{
+                                  backgroundColor: getRgba(getAppHexColor(app.color, app.key), 0.15),
+                                  color: getAppHexColor(app.color, app.key)
+                                }}
+                              >
                                 {renderIcon(app.icon)}
                               </div>
                               <div>
@@ -1863,24 +1896,51 @@ export default function AdminAppRegistry({
                 {/* Theme Color Selector */}
                 <div className="flex flex-col gap-1.5 mt-2">
                   <label className="text-xs font-bold text-text-sec uppercase tracking-wider">
-                    主题色彩 (Theme Color)
+                    主题色彩 (Theme Color - 支持6位十六进制颜色)
                   </label>
                   <div className="flex items-center gap-3">
-                    {/* Circle preview of the selected theme color */}
-                    <div className={`flex items-center justify-center w-10 h-10 rounded border border-input-border shrink-0 ${APP_COLORS.find(c => c.value === color)?.bg || 'bg-slate-500/10 text-slate-600'}`}>
-                      <div className="w-4 h-4 rounded-full bg-current animate-pulse" />
-                    </div>
-                    <select
+                    {/* Native color picker palette */}
+                    <input
+                      type="color"
+                      value={color.startsWith('#') && color.length === 7 ? color : '#64748B'}
+                      onChange={(e) => setColor(e.target.value.toUpperCase())}
+                      className="w-10 h-10 p-0 rounded-lg border border-input-border bg-transparent cursor-pointer overflow-hidden shrink-0"
+                      title="选择颜色"
+                    />
+                    
+                    {/* Text input showing hex color */}
+                    <input
+                      type="text"
                       value={color}
-                      onChange={(e) => setColor(e.target.value)}
-                      className="flex-1 px-3 py-2 rounded border border-input-border bg-card-surface text-title text-sm focus:outline-none focus:ring-1 focus:ring-title focus:border-title h-10 cursor-pointer"
-                    >
-                      {APP_COLORS.map((c) => (
-                        <option key={c.value} value={c.value} className="bg-card-surface text-title">
-                          {c.label}
-                        </option>
+                      onChange={(e) => {
+                        let val = e.target.value;
+                        // Keep hex styling or let user type freely, uppercase it
+                        if (val && !val.startsWith('#') && /^[0-9A-Fa-f]{0,6}$/.test(val)) {
+                          val = '#' + val;
+                        }
+                        setColor(val.toUpperCase());
+                      }}
+                      className="flex-1 px-3 py-2 rounded border border-input-border bg-card-surface text-title text-sm focus:outline-none focus:ring-1 focus:ring-title focus:border-title h-10 font-mono"
+                      placeholder="#10B981"
+                      maxLength={7}
+                    />
+                  </div>
+
+                  {/* Predefined quick color presets */}
+                  <div className="flex items-center gap-2.5 mt-1.5 flex-wrap">
+                    <span className="text-[10px] font-bold text-text-sec uppercase tracking-wider">快捷预设:</span>
+                    <div className="flex gap-2">
+                      {APP_COLORS_PRESETS.map((p) => (
+                        <button
+                          key={p.value}
+                          type="button"
+                          onClick={() => setColor(p.value)}
+                          className={`w-6 h-6 rounded-full border transition-all ${color.toUpperCase() === p.value.toUpperCase() ? 'scale-110 border-title ring-2 ring-zpje-accent/30' : 'border-card-border hover:scale-105'}`}
+                          style={{ backgroundColor: p.value }}
+                          title={p.label}
+                        />
                       ))}
-                    </select>
+                    </div>
                   </div>
                 </div>
 

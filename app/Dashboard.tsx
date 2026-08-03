@@ -36,13 +36,10 @@ interface AppConfig {
   url: string;
   status: 'active' | 'maintenance' | 'offline';
   icon: React.ComponentType<{ className?: string }>;
-  color: {
-    iconBg: string;
-    iconText: string;
-    borderHover: string;
-  };
+  color: string;
   tag: string;
   mainDeptId: string | null;
+  key: string;
 }
 
 interface DBApp {
@@ -112,71 +109,34 @@ const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
   Hammer: Hammer,
 };
 
-const COLOR_MAP: Record<string, { iconBg: string, iconText: string, borderHover: string }> = {
-  emerald: {
-    iconBg: 'bg-emerald-500/10 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400',
-    iconText: 'text-emerald-600 dark:text-emerald-400',
-    borderHover: 'hover:border-emerald-500/40 dark:hover:border-emerald-500/60 shadow-emerald-500/2 hover:shadow-emerald-500/10 border-emerald-500/20'
-  },
-  blue: {
-    iconBg: 'bg-blue-500/10 text-blue-600 dark:bg-blue-500/20 dark:text-blue-400',
-    iconText: 'text-blue-600 dark:text-blue-400',
-    borderHover: 'hover:border-blue-500/40 dark:hover:border-blue-500/60 shadow-blue-500/2 hover:shadow-blue-500/10 border-blue-500/20'
-  },
-  amber: {
-    iconBg: 'bg-amber-500/10 text-amber-600 dark:bg-amber-500/20 dark:text-amber-400',
-    iconText: 'text-amber-600 dark:text-amber-400',
-    borderHover: 'hover:border-amber-500/40 dark:hover:border-amber-500/60 shadow-amber-500/2 hover:shadow-amber-500/10 border-amber-500/20'
-  },
-  purple: {
-    iconBg: 'bg-purple-500/10 text-purple-600 dark:bg-purple-500/20 dark:text-purple-400',
-    iconText: 'text-purple-600 dark:text-purple-400',
-    borderHover: 'hover:border-purple-500/40 dark:hover:border-purple-500/60 shadow-purple-500/2 hover:shadow-purple-500/10 border-purple-500/20'
-  },
-  cyan: {
-    iconBg: 'bg-cyan-500/10 text-cyan-600 dark:bg-cyan-500/20 dark:text-cyan-400',
-    iconText: 'text-cyan-600 dark:text-cyan-400',
-    borderHover: 'hover:border-cyan-500/40 dark:hover:border-cyan-500/60 shadow-cyan-500/2 hover:shadow-cyan-500/10 border-cyan-500/20'
-  },
-  slate: {
-    iconBg: 'bg-slate-500/10 text-slate-600 dark:bg-slate-500/20 dark:text-slate-400',
-    iconText: 'text-slate-600 dark:text-slate-400',
-    borderHover: 'hover:border-slate-500/40 dark:hover:border-slate-500/60 shadow-slate-500/2 hover:shadow-slate-500/10 border-slate-500/20'
-  },
-  // Legacy key mappings for backward compatibility
-  CarbonPlatform: {
-    iconBg: 'bg-emerald-500/10 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400',
-    iconText: 'text-emerald-600 dark:text-emerald-400',
-    borderHover: 'hover:border-emerald-500/40 dark:hover:border-emerald-500/60 shadow-emerald-500/2 hover:shadow-emerald-500/10 border-emerald-500/20'
-  },
-  FabFlow: {
-    iconBg: 'bg-blue-500/10 text-blue-600 dark:bg-blue-500/20 dark:text-blue-400',
-    iconText: 'text-blue-600 dark:text-blue-400',
-    borderHover: 'hover:border-blue-500/40 dark:hover:border-blue-500/60 shadow-blue-500/2 hover:shadow-blue-500/10 border-blue-500/20'
-  },
-  supos_Kanban: {
-    iconBg: 'bg-amber-500/10 text-amber-600 dark:bg-amber-500/20 dark:text-amber-400',
-    iconText: 'text-amber-600 dark:text-amber-400',
-    borderHover: 'hover:border-amber-500/40 dark:hover:border-amber-500/60 shadow-amber-500/2 hover:shadow-amber-500/10 border-amber-500/20'
-  },
-  DocEx: {
-    iconBg: 'bg-purple-500/10 text-purple-600 dark:bg-purple-500/20 dark:text-purple-400',
-    iconText: 'text-purple-600 dark:text-purple-400',
-    borderHover: 'hover:border-purple-500/40 dark:hover:border-purple-500/60 shadow-purple-500/2 hover:shadow-purple-500/10 border-purple-500/20'
-  },
-  WeldSnap: {
-    iconBg: 'bg-cyan-500/10 text-cyan-600 dark:bg-cyan-500/20 dark:text-cyan-400',
-    iconText: 'text-cyan-600 dark:text-cyan-400',
-    borderHover: 'hover:border-cyan-500/40 dark:hover:border-cyan-500/60 shadow-cyan-500/2 hover:shadow-cyan-500/10 border-cyan-500/20'
-  },
+const LEGACY_COLOR_HEX: Record<string, string> = {
+  emerald: '#10B981',
+  blue: '#3B82F6',
+  amber: '#F59E0B',
+  purple: '#8B5CF6',
+  cyan: '#06B6D4',
+  slate: '#64748B',
+  CarbonPlatform: '#10B981',
+  FabFlow: '#3B82F6',
+  supos_Kanban: '#F59E0B',
+  DocEx: '#8B5CF6',
+  WeldSnap: '#06B6D4',
+};
+
+const getAppHexColor = (color: string | null | undefined, key: string): string => {
+  if (color && color.startsWith('#')) return color;
+  return LEGACY_COLOR_HEX[color || ''] || LEGACY_COLOR_HEX[key] || '#64748B';
+};
+
+const getRgba = (hex: string, alpha: number) => {
+  const cleanHex = hex.startsWith('#') ? hex : '#64748B';
+  const r = parseInt(cleanHex.slice(1, 3), 16) || 100;
+  const g = parseInt(cleanHex.slice(3, 5), 16) || 116;
+  const b = parseInt(cleanHex.slice(5, 7), 16) || 139;
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 };
 
 const DEFAULT_ICON = LayoutDashboard;
-const DEFAULT_COLOR = {
-  iconBg: 'bg-slate-500/10 text-slate-600 dark:bg-slate-500/20 dark:text-slate-400',
-  iconText: 'text-slate-600 dark:text-slate-400',
-  borderHover: 'hover:border-slate-500/40 dark:hover:border-slate-500/60 shadow-slate-500/2 hover:shadow-slate-500/10 border-slate-500/20'
-};
 
 function DashboardWidget({ widget }: { widget: WidgetConfig }) {
   const [data, setData] = useState<{ metrics?: Array<{ label: string, value: string, change: string, trend: string }> } | null>(null);
@@ -264,6 +224,7 @@ export default function Dashboard({ userId, initialApps, departments, isAdmin, u
   const [activeAlertApp, setActiveAlertApp] = useState<AppConfig | null>(null);
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
   const [mounted, setMounted] = useState(false);
+  const [hoveredAppId, setHoveredAppId] = useState<string | null>(null);
   const isGuest = userId === 'guest';
 
   // Favorites state
@@ -347,7 +308,6 @@ export default function Dashboard({ userId, initialApps, departments, isAdmin, u
 
   const mappedApps: AppConfig[] = initialApps.map((app) => {
     const IconComponent = ICON_MAP[app.icon || ''] || DEFAULT_ICON;
-    const colorClasses = COLOR_MAP[app.color || ''] || COLOR_MAP[app.key] || DEFAULT_COLOR;
     const status: 'active' | 'maintenance' | 'offline' = app.isMaintenance
       ? 'maintenance'
       : (app.healthStatus === 'UNHEALTHY' ? 'offline' : 'active');
@@ -359,9 +319,10 @@ export default function Dashboard({ userId, initialApps, departments, isAdmin, u
       url: app.url,
       status,
       icon: IconComponent,
-      color: colorClasses,
+      color: app.color || '',
       tag: app.mainDept?.name || '通用应用',
       mainDeptId: app.mainDeptId,
+      key: app.key,
     };
   });
 
@@ -555,8 +516,9 @@ export default function Dashboard({ userId, initialApps, departments, isAdmin, u
     const IconComponent = app.icon;
     const isMaintenanceMode = app.status === 'maintenance';
     const isOffline = app.status === 'offline';
-    const colorClasses = app.color;
     const isFav = favoriteIds.includes(app.id);
+    const hexColor = getAppHexColor(app.color, app.key);
+    const isHovered = hoveredAppId === `${app.id}-${isFavoriteSection ? 'fav' : 'main'}`;
 
     return (
       <a
@@ -572,13 +534,25 @@ export default function Dashboard({ userId, initialApps, departments, isAdmin, u
             recordAccess(app.id);
           }
         }}
-        className={`group relative flex flex-col justify-between p-4 rounded-xl bg-card-surface border border-card-border ${colorClasses.borderHover} transition-all duration-300 hover:-translate-y-0.5 hover:shadow-md ${isMaintenanceMode ? 'opacity-40 select-none' : ''
+        onMouseEnter={() => setHoveredAppId(`${app.id}-${isFavoriteSection ? 'fav' : 'main'}`)}
+        onMouseLeave={() => setHoveredAppId(null)}
+        className={`group relative flex flex-col justify-between p-4 rounded-xl bg-card-surface border border-card-border transition-all duration-300 hover:-translate-y-0.5 ${isMaintenanceMode ? 'opacity-40 select-none' : ''
           } ${isOffline ? 'opacity-50' : ''}`}
+        style={{
+          borderColor: isHovered ? getRgba(hexColor, 0.4) : undefined,
+          boxShadow: isHovered ? `0 4px 12px ${getRgba(hexColor, 0.15)}` : undefined,
+        }}
       >
         <div>
           {/* Icon & Status & Favorite Button */}
           <div className="flex items-center justify-between mb-3">
-            <div className={`p-2 rounded-lg ${colorClasses.iconBg} ${colorClasses.iconText} group-hover:scale-105 transition-transform`}>
+            <div 
+              className="p-2 rounded-lg group-hover:scale-105 transition-transform flex items-center justify-center w-9 h-9"
+              style={{
+                backgroundColor: getRgba(hexColor, theme === 'dark' ? 0.2 : 0.1),
+                color: hexColor
+              }}
+            >
               <IconComponent className="w-5 h-5" />
             </div>
 
@@ -873,7 +847,7 @@ export default function Dashboard({ userId, initialApps, departments, isAdmin, u
                   <Star className="w-5 h-5 text-amber-500 fill-amber-500" />
                   <h2 className="text-lg font-bold tracking-wide text-title">我的收藏</h2>
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
                   {favoriteApps.map(app => renderAppCard(app, true))}
                 </div>
               </div>
@@ -888,7 +862,7 @@ export default function Dashboard({ userId, initialApps, departments, isAdmin, u
               </div>
 
               {filteredApps.length > 0 ? (
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
                   {filteredApps.map(app => renderAppCard(app, false))}
                 </div>
               ) : (
