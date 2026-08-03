@@ -1708,7 +1708,7 @@ export default function AdminAppRegistry({
 
                   <div className="flex flex-col gap-1.5">
                     <label className="text-xs font-bold text-text-sec uppercase tracking-wider">
-                      应用名称 <span className="text-red-500">*</span>
+                      应用名称 <span className="text-red-500">*</span> <span className="text-text-sec/60 font-normal ml-1">(建议20字以内)</span>
                     </label>
                     <input
                       type="text"
