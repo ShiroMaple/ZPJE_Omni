@@ -14,6 +14,7 @@ model App {
   description String?  @db.Text // 简介/描述
   url         String   // 访问入口 URL
   icon        String?  // 图标名称 (如 Lucide 图标名 "Zap", "Activity")
+  color       String?  // 主题色名称 (如 "emerald", "blue", "amber", "purple", "cyan", "slate")
   
   // 状态与排序控制
   isMaintenance Boolean @default(false) // 是否开启维护模式

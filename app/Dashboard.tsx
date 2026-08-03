@@ -52,6 +52,7 @@ interface DBApp {
   description: string | null;
   url: string;
   icon: string | null;
+  color?: string | null;
   isMaintenance: boolean;
   healthStatus: string;
   mainDeptId: string | null;
@@ -112,30 +113,61 @@ const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
 };
 
 const COLOR_MAP: Record<string, { iconBg: string, iconText: string, borderHover: string }> = {
+  emerald: {
+    iconBg: 'bg-emerald-500/10 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400',
+    iconText: 'text-emerald-600 dark:text-emerald-400',
+    borderHover: 'hover:border-emerald-500/40 dark:hover:border-emerald-500/60 shadow-emerald-500/2 hover:shadow-emerald-500/10 border-emerald-500/20'
+  },
+  blue: {
+    iconBg: 'bg-blue-500/10 text-blue-600 dark:bg-blue-500/20 dark:text-blue-400',
+    iconText: 'text-blue-600 dark:text-blue-400',
+    borderHover: 'hover:border-blue-500/40 dark:hover:border-blue-500/60 shadow-blue-500/2 hover:shadow-blue-500/10 border-blue-500/20'
+  },
+  amber: {
+    iconBg: 'bg-amber-500/10 text-amber-600 dark:bg-amber-500/20 dark:text-amber-400',
+    iconText: 'text-amber-600 dark:text-amber-400',
+    borderHover: 'hover:border-amber-500/40 dark:hover:border-amber-500/60 shadow-amber-500/2 hover:shadow-amber-500/10 border-amber-500/20'
+  },
+  purple: {
+    iconBg: 'bg-purple-500/10 text-purple-600 dark:bg-purple-500/20 dark:text-purple-400',
+    iconText: 'text-purple-600 dark:text-purple-400',
+    borderHover: 'hover:border-purple-500/40 dark:hover:border-purple-500/60 shadow-purple-500/2 hover:shadow-purple-500/10 border-purple-500/20'
+  },
+  cyan: {
+    iconBg: 'bg-cyan-500/10 text-cyan-600 dark:bg-cyan-500/20 dark:text-cyan-400',
+    iconText: 'text-cyan-600 dark:text-cyan-400',
+    borderHover: 'hover:border-cyan-500/40 dark:hover:border-cyan-500/60 shadow-cyan-500/2 hover:shadow-cyan-500/10 border-cyan-500/20'
+  },
+  slate: {
+    iconBg: 'bg-slate-500/10 text-slate-600 dark:bg-slate-500/20 dark:text-slate-400',
+    iconText: 'text-slate-600 dark:text-slate-400',
+    borderHover: 'hover:border-slate-500/40 dark:hover:border-slate-500/60 shadow-slate-500/2 hover:shadow-slate-500/10 border-slate-500/20'
+  },
+  // Legacy key mappings for backward compatibility
   CarbonPlatform: {
     iconBg: 'bg-emerald-500/10 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400',
     iconText: 'text-emerald-600 dark:text-emerald-400',
-    borderHover: 'hover:border-emerald-500/40 dark:hover:border-emerald-500/60 shadow-emerald-500/2 hover:shadow-emerald-500/10'
+    borderHover: 'hover:border-emerald-500/40 dark:hover:border-emerald-500/60 shadow-emerald-500/2 hover:shadow-emerald-500/10 border-emerald-500/20'
   },
   FabFlow: {
     iconBg: 'bg-blue-500/10 text-blue-600 dark:bg-blue-500/20 dark:text-blue-400',
     iconText: 'text-blue-600 dark:text-blue-400',
-    borderHover: 'hover:border-blue-500/40 dark:hover:border-blue-500/60 shadow-blue-500/2 hover:shadow-blue-500/10'
+    borderHover: 'hover:border-blue-500/40 dark:hover:border-blue-500/60 shadow-blue-500/2 hover:shadow-blue-500/10 border-blue-500/20'
   },
   supos_Kanban: {
     iconBg: 'bg-amber-500/10 text-amber-600 dark:bg-amber-500/20 dark:text-amber-400',
     iconText: 'text-amber-600 dark:text-amber-400',
-    borderHover: 'hover:border-amber-500/40 dark:hover:border-amber-500/60 shadow-amber-500/2 hover:shadow-amber-500/10'
+    borderHover: 'hover:border-amber-500/40 dark:hover:border-amber-500/60 shadow-amber-500/2 hover:shadow-amber-500/10 border-amber-500/20'
   },
   DocEx: {
     iconBg: 'bg-purple-500/10 text-purple-600 dark:bg-purple-500/20 dark:text-purple-400',
     iconText: 'text-purple-600 dark:text-purple-400',
-    borderHover: 'hover:border-purple-500/40 dark:hover:border-purple-500/60 shadow-purple-500/2 hover:shadow-purple-500/10'
+    borderHover: 'hover:border-purple-500/40 dark:hover:border-purple-500/60 shadow-purple-500/2 hover:shadow-purple-500/10 border-purple-500/20'
   },
   WeldSnap: {
     iconBg: 'bg-cyan-500/10 text-cyan-600 dark:bg-cyan-500/20 dark:text-cyan-400',
     iconText: 'text-cyan-600 dark:text-cyan-400',
-    borderHover: 'hover:border-cyan-500/40 dark:hover:border-cyan-500/60 shadow-cyan-500/2 hover:shadow-cyan-500/10'
+    borderHover: 'hover:border-cyan-500/40 dark:hover:border-cyan-500/60 shadow-cyan-500/2 hover:shadow-cyan-500/10 border-cyan-500/20'
   },
 };
 
@@ -143,7 +175,7 @@ const DEFAULT_ICON = LayoutDashboard;
 const DEFAULT_COLOR = {
   iconBg: 'bg-slate-500/10 text-slate-600 dark:bg-slate-500/20 dark:text-slate-400',
   iconText: 'text-slate-600 dark:text-slate-400',
-  borderHover: 'hover:border-slate-500/40 dark:hover:border-slate-500/60 shadow-slate-500/2 hover:shadow-slate-500/10'
+  borderHover: 'hover:border-slate-500/40 dark:hover:border-slate-500/60 shadow-slate-500/2 hover:shadow-slate-500/10 border-slate-500/20'
 };
 
 function DashboardWidget({ widget }: { widget: WidgetConfig }) {
@@ -315,7 +347,7 @@ export default function Dashboard({ userId, initialApps, departments, isAdmin, u
 
   const mappedApps: AppConfig[] = initialApps.map((app) => {
     const IconComponent = ICON_MAP[app.icon || ''] || DEFAULT_ICON;
-    const colorClasses = COLOR_MAP[app.key] || DEFAULT_COLOR;
+    const colorClasses = COLOR_MAP[app.color || ''] || COLOR_MAP[app.key] || DEFAULT_COLOR;
     const status: 'active' | 'maintenance' | 'offline' = app.isMaintenance
       ? 'maintenance'
       : (app.healthStatus === 'UNHEALTHY' ? 'offline' : 'active');
@@ -577,13 +609,13 @@ export default function Dashboard({ userId, initialApps, departments, isAdmin, u
           </div>
 
           {/* Info */}
-          <h3 className="text-base font-bold text-title group-hover:text-zpje-brand transition-colors flex items-center gap-1">
+          <h3 className="text-base font-bold text-title group-hover:text-zpje-brand transition-colors flex flex-wrap items-center gap-1 break-all">
             {app.name}
           </h3>
           <div className="text-xs text-text-sec font-bold tracking-wider uppercase mt-0.5">
             {app.tag}
           </div>
-          <p className="mt-2 text-sm text-text-sec leading-relaxed min-h-[3rem] line-clamp-2">
+          <p className="mt-2 text-sm text-text-sec leading-relaxed break-words">
             {app.description}
           </p>
         </div>
@@ -841,7 +873,7 @@ export default function Dashboard({ userId, initialApps, departments, isAdmin, u
                   <Star className="w-5 h-5 text-amber-500 fill-amber-500" />
                   <h2 className="text-lg font-bold tracking-wide text-title">我的收藏</h2>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4">
                   {favoriteApps.map(app => renderAppCard(app, true))}
                 </div>
               </div>
@@ -856,7 +888,7 @@ export default function Dashboard({ userId, initialApps, departments, isAdmin, u
               </div>
 
               {filteredApps.length > 0 ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4">
                   {filteredApps.map(app => renderAppCard(app, false))}
                 </div>
               ) : (

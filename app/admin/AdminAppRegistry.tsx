@@ -41,6 +41,7 @@ interface DBApp {
   description: string | null;
   url: string;
   icon: string | null;
+  color?: string | null;
   isMaintenance: boolean;
   sortOrder: number;
   mainDeptId: string | null;
@@ -138,6 +139,15 @@ const ICON_PRESETS = [
   'Leaf',
   'Clock',
   'Hammer'
+];
+
+const APP_COLORS = [
+  { value: 'emerald', label: '翡翠绿 (Emerald)', bg: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' },
+  { value: 'blue', label: '宝石蓝 (Blue)', bg: 'bg-blue-500/10 text-blue-600 dark:text-blue-400' },
+  { value: 'amber', label: '琥珀黄 (Amber)', bg: 'bg-amber-500/10 text-amber-600 dark:text-amber-400' },
+  { value: 'purple', label: '丁香紫 (Purple)', bg: 'bg-purple-500/10 text-purple-600 dark:text-purple-400' },
+  { value: 'cyan', label: '青蓝色 (Cyan)', bg: 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400' },
+  { value: 'slate', label: '板岩灰 (Slate)', bg: 'bg-slate-500/10 text-slate-600 dark:text-slate-400' }
 ];
 
 export default function AdminAppRegistry({
@@ -253,6 +263,7 @@ export default function AdminAppRegistry({
   const [isMaintenance, setIsMaintenance] = useState(false);
   const [sortOrder, setSortOrder] = useState(0);
   const [mainDeptId, setMainDeptId] = useState('');
+  const [color, setColor] = useState('slate');
   const [visibleToAll, setVisibleToAll] = useState(true);
   const [selectedRoleIds, setSelectedRoleIds] = useState<string[]>([]);
   const [selectedDeptIds, setSelectedDeptIds] = useState<string[]>([]);
@@ -286,6 +297,12 @@ export default function AdminAppRegistry({
     setDescription('');
     setUrl('');
     setIcon('LayoutDashboard');
+    
+    // Automatically select a random theme color on App creation
+    const colorsList = ['emerald', 'blue', 'amber', 'purple', 'cyan', 'slate'];
+    const randomColor = colorsList[Math.floor(Math.random() * colorsList.length)];
+    setColor(randomColor);
+
     setIsMaintenance(false);
     setSortOrder(0);
     setMainDeptId('');
@@ -308,6 +325,7 @@ export default function AdminAppRegistry({
     setDescription(app.description || '');
     setUrl(app.url);
     setIcon(app.icon || 'LayoutDashboard');
+    setColor(app.color || 'slate');
     setIsMaintenance(app.isMaintenance);
     setSortOrder(app.sortOrder);
     setMainDeptId(app.mainDeptId || '');
@@ -347,6 +365,7 @@ export default function AdminAppRegistry({
         description,
         url,
         icon,
+        color,
         isMaintenance,
         sortOrder,
         mainDeptId: mainDeptId || null,
@@ -1839,6 +1858,30 @@ export default function AdminAppRegistry({
                       </div>
                     </div>
                   )}
+                </div>
+
+                {/* Theme Color Selector */}
+                <div className="flex flex-col gap-1.5 mt-2">
+                  <label className="text-xs font-bold text-text-sec uppercase tracking-wider">
+                    主题色彩 (Theme Color)
+                  </label>
+                  <div className="flex items-center gap-3">
+                    {/* Circle preview of the selected theme color */}
+                    <div className={`flex items-center justify-center w-10 h-10 rounded border border-input-border shrink-0 ${APP_COLORS.find(c => c.value === color)?.bg || 'bg-slate-500/10 text-slate-600'}`}>
+                      <div className="w-4 h-4 rounded-full bg-current animate-pulse" />
+                    </div>
+                    <select
+                      value={color}
+                      onChange={(e) => setColor(e.target.value)}
+                      className="flex-1 px-3 py-2 rounded border border-input-border bg-card-surface text-title text-sm focus:outline-none focus:ring-1 focus:ring-title focus:border-title h-10 cursor-pointer"
+                    >
+                      {APP_COLORS.map((c) => (
+                        <option key={c.value} value={c.value} className="bg-card-surface text-title">
+                          {c.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
 
                 {/* Maintenance switch */}
