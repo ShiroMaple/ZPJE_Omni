@@ -27,8 +27,25 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  // 1. Delete the JWT cookie
-  cookieStore.delete('token');
+  const host = request.headers.get('host') || '';
+  const isLocalhost = host.includes('localhost') || host.includes('127.0.0.1');
+  const cookieDomain = isLocalhost ? undefined : (process.env.COOKIE_DOMAIN || '.izpje.com');
+
+  // 1. Delete the JWT cookie & session_active cookie by setting maxAge to 0 with correct domain
+  cookieStore.set('token', '', {
+    domain: cookieDomain,
+    path: '/',
+    maxAge: 0,
+    expires: new Date(0),
+    httpOnly: true,
+  });
+  cookieStore.set('session_active', '', {
+    domain: cookieDomain,
+    path: '/',
+    maxAge: 0,
+    expires: new Date(0),
+    httpOnly: false,
+  });
 
   // 2. If ticket exists, notify Seeyon OA in the background
   if (ticket) {
