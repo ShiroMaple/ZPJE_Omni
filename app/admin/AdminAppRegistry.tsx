@@ -116,6 +116,19 @@ interface SystemLog {
   timestamp: string;
 }
 
+interface RoleAssignedMember {
+  id: string;
+  name: string;
+  loginName: string;
+  deptName: string;
+  unitName: string;
+  roles: Array<{
+    id: string;
+    key: string;
+    name: string;
+  }>;
+}
+
 interface AdminAppRegistryProps {
   initialApps: DBApp[];
   departmentsTree: UnitOption[];
@@ -123,7 +136,9 @@ interface AdminAppRegistryProps {
   roles: RoleOption[];
   initialWidgets: WidgetConfig[];
   isSystemAdmin: boolean;
+  isOpsAdmin?: boolean;
   initialAdminMembers: AdminMember[];
+  initialRoleAssignedMembers?: RoleAssignedMember[];
   initialSystemLogs: SystemLog[];
   userId: string;
   userInfo: { name: string; loginName: string; unitName: string; deptName: string; } | null;
@@ -177,6 +192,21 @@ const getRgba = (hex: string, alpha: number) => {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 };
 
+const getRoleBadgeStyle = (roleKey: string) => {
+  switch (roleKey) {
+    case 'admin':
+      return 'bg-red-500/10 text-red-500 border-red-500/30';
+    case 'leader':
+      return 'bg-amber-500/10 text-amber-500 border-amber-500/30';
+    case 'operator':
+      return 'bg-blue-500/10 text-blue-500 border-blue-500/30';
+    case 'user':
+      return 'bg-emerald-500/10 text-emerald-500 border-emerald-500/30';
+    default:
+      return 'bg-purple-500/10 text-purple-500 border-purple-500/30';
+  }
+};
+
 export default function AdminAppRegistry({
   initialApps,
   departmentsTree,
@@ -184,7 +214,9 @@ export default function AdminAppRegistry({
   roles,
   initialWidgets,
   isSystemAdmin,
+  isOpsAdmin,
   initialAdminMembers,
+  initialRoleAssignedMembers,
   initialSystemLogs,
   userId,
   userInfo,
@@ -193,8 +225,20 @@ export default function AdminAppRegistry({
   const [apps, setApps] = useState<DBApp[]>(initialApps);
   const [widgets, setWidgets] = useState<WidgetConfig[]>(initialWidgets);
   const [adminMembers, setAdminMembers] = useState<AdminMember[]>(initialAdminMembers);
+  const [roleAssignedMembers, setRoleAssignedMembers] = useState<RoleAssignedMember[]>(initialRoleAssignedMembers || []);
   const [systemLogs, setSystemLogs] = useState<SystemLog[]>(initialSystemLogs);
   
+  // Tab 3 Sub-tabs: 'roles' (业务角色分配) | 'admins' (管理员特权分配)
+  const [permissionSubTab, setPermissionSubTab] = useState<'roles' | 'admins'>('roles');
+  const [roleFilter, setRoleFilter] = useState<string>('all');
+  const [roleSearchTerm, setRoleSearchTerm] = useState<string>('');
+
+  // Role Member Search State
+  const [roleMemberSearch, setRoleMemberSearch] = useState('');
+  const [roleMemberSearchResults, setRoleMemberSearchResults] = useState<any[]>([]);
+  const [roleMemberSearchLoading, setRoleMemberSearchLoading] = useState(false);
+  const roleSearchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
   // Tab 4 (访问与审计) Sub-tabs: 'access' (用户访问统计) | 'system' (系统审计日志)
   const [statsSubTab, setStatsSubTab] = useState<'access' | 'system'>('access');
   const [systemLogSearch, setSystemLogSearch] = useState('');
@@ -669,6 +713,101 @@ export default function AdminAppRegistry({
     }
   };
 
+  const triggerRoleMemberSearch = (val: string) => {
+    if (roleSearchTimeoutRef.current) {
+      clearTimeout(roleSearchTimeoutRef.current);
+    }
+
+    if (!val.trim()) {
+      setRoleMemberSearchResults([]);
+      setRoleMemberSearchLoading(false);
+      return;
+    }
+
+    setRoleMemberSearchLoading(true);
+    roleSearchTimeoutRef.current = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/admin/members?search=${encodeURIComponent(val)}`);
+        if (res.ok) {
+          const data = await res.json();
+          setRoleMemberSearchResults(data.map((m: any) => ({
+            id: m.id,
+            name: m.name,
+            loginName: m.loginName,
+            unitName: m.unit?.name || '无单位',
+            deptName: m.department?.name || '无部门',
+            roles: (m.roles || []).map((r: any) => ({
+              id: r.role.id,
+              key: r.role.key,
+              name: r.role.name
+            }))
+          })));
+        }
+      } catch (err) {
+        console.error('Search role members failed:', err);
+      } finally {
+        setRoleMemberSearchLoading(false);
+      }
+    }, 400);
+  };
+
+  const handleToggleMemberRole = async (memberId: string, roleId: string, currentRoles: Array<{ id: string; key: string; name: string }>) => {
+    const currentRoleIds = currentRoles.map(r => r.id);
+    const hasRole = currentRoleIds.includes(roleId);
+    const nextRoleIds = hasRole
+      ? currentRoleIds.filter(id => id !== roleId)
+      : [...currentRoleIds, roleId];
+
+    try {
+      const res = await fetch('/api/admin/members', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ memberId, roleIds: nextRoleIds })
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || '分配角色失败');
+      }
+
+      const updated: any = await res.json();
+      const updatedRoles = (updated.roles || []).map((r: any) => ({
+        id: r.role.id,
+        key: r.role.key,
+        name: r.role.name
+      }));
+
+      // Update in search results list
+      setRoleMemberSearchResults(prev => prev.map(m => m.id === memberId ? {
+        ...m,
+        roles: updatedRoles
+      } : m));
+
+      // Update in assigned members list
+      setRoleAssignedMembers(prev => {
+        const exists = prev.some(m => m.id === memberId);
+        if (updatedRoles.length === 0) {
+          return prev.filter(m => m.id !== memberId);
+        }
+        const updatedEntry: RoleAssignedMember = {
+          id: updated.id,
+          name: updated.name,
+          loginName: updated.loginName,
+          deptName: updated.department?.name || '无部门',
+          unitName: updated.unit?.name || '无单位',
+          roles: updatedRoles
+        };
+        if (exists) {
+          return prev.map(m => m.id === memberId ? updatedEntry : m);
+        } else {
+          return [updatedEntry, ...prev].sort((a, b) => a.name.localeCompare(b.name));
+        }
+      });
+    } catch (err: any) {
+      alert(err.message);
+    }
+  };
+
   // Filter logs by selected time filter
   const getFilteredLogs = () => {
     if (timeFilter === 'all') return accessLogs;
@@ -700,6 +839,15 @@ export default function AdminAppRegistry({
   const totalVisits = filteredLogs.length;
   const activeUsersCount = new Set(filteredLogs.map(l => l.loginName)).size;
   const topApp = rankList[0]?.name || '无';
+
+  // Role Counts
+  const roleCounts: Record<string, number> = {};
+  roles.forEach(r => { roleCounts[r.key] = 0; });
+  roleAssignedMembers.forEach(m => {
+    m.roles.forEach(r => {
+      roleCounts[r.key] = (roleCounts[r.key] || 0) + 1;
+    });
+  });
 
   // Stats Pagination
   const totalPages = Math.ceil(filteredLogs.length / itemsPerPage);
@@ -771,12 +919,15 @@ export default function AdminAppRegistry({
             <span className={`transition-all duration-300 whitespace-nowrap overflow-hidden ${isSidebarCollapsed ? 'w-0 opacity-0 ml-0' : 'w-auto opacity-100 ml-3'}`}>Widget 配置</span>
           </button>
 
-          {isSystemAdmin && (
+          {(isSystemAdmin || isOpsAdmin) && (
             <button
               onClick={() => {
                 setActiveTab('members');
+                setPermissionSubTab('roles');
                 setMemberSearch('');
                 setMemberSearchResults([]);
+                setRoleMemberSearch('');
+                setRoleMemberSearchResults([]);
               }}
               className={`w-full flex items-center px-3 py-2.5 rounded-lg border text-sm font-semibold transition-all duration-300 text-left cursor-pointer ${isSidebarCollapsed ? 'justify-center' : ''} ${activeTab === 'members'
                 ? 'bg-zpje-accent border-transparent text-white shadow-sm'
@@ -784,7 +935,7 @@ export default function AdminAppRegistry({
                 }`}
             >
               <Shield className="h-4 w-4 shrink-0" />
-              <span className={`transition-all duration-300 whitespace-nowrap overflow-hidden ${isSidebarCollapsed ? 'w-0 opacity-0 ml-0' : 'w-auto opacity-100 ml-3'}`}>管理员分配</span>
+              <span className={`transition-all duration-300 whitespace-nowrap overflow-hidden ${isSidebarCollapsed ? 'w-0 opacity-0 ml-0' : 'w-auto opacity-100 ml-3'}`}>权限与角色分配</span>
             </button>
           )}
 
@@ -844,7 +995,7 @@ export default function AdminAppRegistry({
             <span className="text-text-sec">
               {activeTab === 'apps' ? '应用管理' :
                 activeTab === 'widgets' ? 'Widget 配置' :
-                  activeTab === 'members' ? '管理员分配' : '审计与统计'}
+                  activeTab === 'members' ? '权限与角色分配' : '审计与统计'}
             </span>
           </div>
 
@@ -1159,137 +1310,376 @@ export default function AdminAppRegistry({
             </>
           )}
 
-          {/* Tab 3: Admin Allocation (SYS_ADMIN only) */}
-          {activeTab === 'members' && isSystemAdmin && (
+          {/* Tab 3: Permission & Role Allocation (SYS_ADMIN or OPS_ADMIN) */}
+          {activeTab === 'members' && (isSystemAdmin || isOpsAdmin) && (
             <>
-              <div className="flex flex-col gap-1.5">
-                <h1 className="text-2xl font-bold tracking-tight text-title">管理员权限分配</h1>
-                <p className="text-sm text-text-sec">搜索并授权组织内员工成为系统管理员、运维管理员或部门管理员。仅系统管理员拥有此分配权。</p>
+              {/* Permission & Role Sub-tabs Header */}
+              <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 border-b border-card-border pb-3 shrink-0">
+                <div className="flex border-b-2 border-transparent gap-6">
+                  <button
+                    onClick={() => setPermissionSubTab('roles')}
+                    className={`pb-2 text-sm font-bold border-b-2 transition-all cursor-pointer ${permissionSubTab === 'roles'
+                      ? 'border-zpje-accent text-zpje-accent'
+                      : 'border-transparent text-text-sec hover:text-title'
+                      }`}
+                  >
+                    业务角色分配
+                  </button>
+                  {isSystemAdmin && (
+                    <button
+                      onClick={() => setPermissionSubTab('admins')}
+                      className={`pb-2 text-sm font-bold border-b-2 transition-all cursor-pointer ${permissionSubTab === 'admins'
+                        ? 'border-zpje-accent text-zpje-accent'
+                        : 'border-transparent text-text-sec hover:text-title'
+                        }`}
+                    >
+                      管理员特权分配
+                    </button>
+                  )}
+                </div>
+
+                <p className="text-xs text-text-sec">
+                  {permissionSubTab === 'roles'
+                    ? '支持为在职员工自由配置多个业务角色（普通员工、高级操作员、领导、系统管理员），用于精细化控制应用权限。'
+                    : '管理后台特权分级授权（系统管理员、运维管理员、部门管理员），仅系统管理员拥有此权限。'}
+                </p>
               </div>
 
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start w-full">
-                {/* Search Pane */}
-                <div className="bg-card-surface border border-card-border p-5 rounded-2xl flex flex-col gap-4 shadow-sm">
-                  <h4 className="font-bold text-title text-sm border-b border-card-border pb-3 flex items-center gap-2">
-                    <Shield className="w-4 h-4 text-zpje-brand" />
-                    搜索并添加管理员
-                  </h4>
+              {permissionSubTab === 'roles' ? (
+                // Business Roles Allocation Content
+                <div className="flex flex-col gap-6">
+                  {/* Top 4 Role Summary Cards */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                    {roles.map(r => (
+                      <div
+                        key={r.id}
+                        onClick={() => setRoleFilter(roleFilter === r.key ? 'all' : r.key)}
+                        className={`p-4 rounded-2xl border bg-card-surface flex flex-col gap-2 transition-all cursor-pointer shadow-sm hover:border-zpje-accent ${roleFilter === r.key ? 'ring-2 ring-zpje-accent border-zpje-accent' : 'border-card-border'}`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${getRoleBadgeStyle(r.key)}`}>
+                            {r.name}
+                          </span>
+                          <span className="text-[10px] text-text-sec font-mono">@{r.key}</span>
+                        </div>
+                        <div className="flex items-baseline gap-1 mt-1">
+                          <span className="text-2xl font-extrabold text-title font-mono">{roleCounts[r.key] || 0}</span>
+                          <span className="text-xs text-text-sec">人</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
 
-                  <div className="flex flex-col gap-3">
-                    <div className="relative">
-                      <Search className="absolute left-3 top-2.5 h-4 w-4 text-text-sec" />
-                      <input
-                        type="text"
-                        placeholder="输入姓名或登录账号搜索..."
-                        value={memberSearch}
-                        onChange={(e) => {
-                          setMemberSearch(e.target.value);
-                          triggerMemberSearch(e.target.value);
-                        }}
-                        className="w-full pl-9 pr-4 py-2 rounded-xl bg-canvas border border-input-border text-title text-xs focus:outline-none focus:ring-1 focus:ring-title"
-                      />
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start w-full">
+                    {/* Left Col: Search and Assign Roles */}
+                    <div className="bg-card-surface border border-card-border p-5 rounded-2xl flex flex-col gap-4 shadow-sm">
+                      <h4 className="font-bold text-title text-sm border-b border-card-border pb-3 flex items-center gap-2">
+                        <Users className="w-4 h-4 text-zpje-brand" />
+                        检索员工并分配角色
+                      </h4>
+
+                      <div className="flex flex-col gap-3">
+                        <div className="relative">
+                          <Search className="absolute left-3 top-2.5 h-4 w-4 text-text-sec" />
+                          <input
+                            type="text"
+                            placeholder="输入姓名、工号或账号搜索..."
+                            value={roleMemberSearch}
+                            onChange={(e) => {
+                              setRoleMemberSearch(e.target.value);
+                              triggerRoleMemberSearch(e.target.value);
+                            }}
+                            className="w-full pl-9 pr-4 py-2 rounded-xl bg-canvas border border-input-border text-title text-xs focus:outline-none focus:ring-1 focus:ring-title"
+                          />
+                        </div>
+
+                        {roleMemberSearchLoading ? (
+                          <div className="text-center py-6 text-xs text-text-sec animate-pulse">正在查找在职员工...</div>
+                        ) : roleMemberSearchResults.length > 0 ? (
+                          <div className="flex flex-col gap-3 max-h-96 overflow-y-auto border border-card-border rounded-xl p-2.5 bg-sidebar-hover/10">
+                            {roleMemberSearchResults.map(m => {
+                              const memberRoleIds = (m.roles || []).map((r: any) => r.id);
+                              return (
+                                <div key={m.id} className="p-3 rounded-xl bg-card-surface border border-card-border flex flex-col gap-2.5 shadow-xs">
+                                  <div className="flex items-center justify-between gap-2">
+                                    <div className="truncate min-w-0">
+                                      <div className="font-bold text-title text-xs">{m.name}</div>
+                                      <div className="text-[10px] text-text-sec font-mono">@{m.loginName}</div>
+                                    </div>
+                                    <span className="text-[10px] text-text-sec/80 bg-sidebar-hover px-2 py-0.5 rounded truncate max-w-[120px]">
+                                      {m.deptName}
+                                    </span>
+                                  </div>
+
+                                  {/* Multi-role selection badges */}
+                                  <div className="flex flex-wrap gap-1.5 pt-1 border-t border-card-border/60">
+                                    {roles.map(r => {
+                                      const isSelected = memberRoleIds.includes(r.id);
+                                      return (
+                                        <button
+                                          key={r.id}
+                                          type="button"
+                                          onClick={() => handleToggleMemberRole(m.id, r.id, m.roles || [])}
+                                          className={`px-2 py-1 rounded-lg text-[10px] font-bold border transition-all flex items-center gap-1 cursor-pointer ${
+                                            isSelected
+                                              ? `${getRoleBadgeStyle(r.key)} ring-1 ring-current shadow-xs`
+                                              : 'bg-canvas text-text-sec/70 border-input-border hover:text-title hover:border-card-border'
+                                          }`}
+                                          title={isSelected ? `点击移除 ${r.name} 角色` : `点击赋予 ${r.name} 角色`}
+                                        >
+                                          {isSelected ? <Check className="w-3 h-3" /> : <Plus className="w-3 h-3 opacity-40" />}
+                                          <span>{r.name}</span>
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : roleMemberSearch.trim() !== '' ? (
+                          <div className="text-center py-6 text-xs text-text-sec italic">未找到匹配的在职员工</div>
+                        ) : (
+                          <div className="text-center py-6 text-[10px] text-text-sec italic">在上方输入字符即可检索 6000+ OA 关联员工并进行角色分配</div>
+                        )}
+                      </div>
                     </div>
 
-                    {memberSearchLoading ? (
-                      <div className="text-center py-6 text-xs text-text-sec animate-pulse">正在查找在职员工...</div>
-                    ) : memberSearchResults.length > 0 ? (
-                      <div className="flex flex-col gap-2 max-h-80 overflow-y-auto border border-card-border rounded-xl p-2 bg-sidebar-hover/10">
-                        {memberSearchResults.map(m => (
-                          <div key={m.id} className="p-2 rounded-lg bg-card-surface border border-card-border flex items-center justify-between gap-3 text-xs">
-                            <div className="truncate min-w-0">
-                              <div className="font-bold text-title">{m.name}</div>
-                              <div className="text-[10px] text-text-sec font-mono">@{m.loginName}</div>
-                              <div className="text-[10px] text-text-sec/80 truncate">{m.unitName} - {m.deptName}</div>
-                            </div>
+                    {/* Right Col: Assigned Members Table */}
+                    <div className="lg:col-span-2 bg-card-surface border border-card-border rounded-2xl overflow-hidden shadow-sm flex flex-col justify-between">
+                      <div>
+                        <div className="px-5 py-4 border-b border-card-border bg-sidebar-hover/20 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                          <h4 className="font-bold text-title text-sm flex items-center gap-2">
+                            <span>已分配角色员工列表</span>
+                            <span className="text-xs font-mono text-text-sec bg-sidebar-hover px-2 py-0.5 rounded-full">
+                              {roleAssignedMembers.length} 人
+                            </span>
+                          </h4>
 
+                          {/* Filter by role & search */}
+                          <div className="flex items-center gap-2">
                             <select
-                              onChange={(e) => handleAdminTypeChange(m.id, e.target.value as any, m)}
-                              defaultValue="NONE"
-                              className="px-2 py-1 rounded border border-input-border bg-canvas text-title text-[10px] font-semibold focus:outline-none shrink-0"
+                              value={roleFilter}
+                              onChange={(e) => setRoleFilter(e.target.value)}
+                              className="px-2.5 py-1.5 rounded-lg border border-input-border bg-card-surface text-title text-xs font-semibold focus:outline-none cursor-pointer"
                             >
-                              <option value="NONE">普通员工</option>
-                              <option value="SYS_ADMIN">系统管理员</option>
-                              <option value="OPS_ADMIN">运维管理员</option>
-                              <option value="DEPT_ADMIN">部门管理员</option>
+                              <option value="all">所有角色</option>
+                              {roles.map(r => (
+                                <option key={r.id} value={r.key}>{r.name}</option>
+                              ))}
                             </select>
+
+                            <input
+                              type="text"
+                              placeholder="在列表中筛选..."
+                              value={roleSearchTerm}
+                              onChange={(e) => setRoleSearchTerm(e.target.value)}
+                              className="px-2.5 py-1.5 rounded-lg border border-input-border bg-card-surface text-title text-xs focus:outline-none w-32 sm:w-40"
+                            />
                           </div>
-                        ))}
+                        </div>
+
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-left border-collapse text-xs">
+                            <thead>
+                              <tr className="bg-sidebar-hover/40 border-b border-card-border text-text-sec font-semibold">
+                                <th className="p-3">姓名 / 账号</th>
+                                <th className="p-3">所属单位与部门</th>
+                                <th className="p-3">已分配业务角色 (可点击快速移除)</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {roleAssignedMembers
+                                .filter(m => {
+                                  const matchesFilter = roleFilter === 'all' || m.roles.some(r => r.key === roleFilter);
+                                  const matchesSearch = !roleSearchTerm.trim() ||
+                                    m.name.toLowerCase().includes(roleSearchTerm.toLowerCase()) ||
+                                    m.loginName.toLowerCase().includes(roleSearchTerm.toLowerCase()) ||
+                                    m.deptName.toLowerCase().includes(roleSearchTerm.toLowerCase());
+                                  return matchesFilter && matchesSearch;
+                                })
+                                .length > 0 ? (
+                                roleAssignedMembers
+                                  .filter(m => {
+                                    const matchesFilter = roleFilter === 'all' || m.roles.some(r => r.key === roleFilter);
+                                    const matchesSearch = !roleSearchTerm.trim() ||
+                                      m.name.toLowerCase().includes(roleSearchTerm.toLowerCase()) ||
+                                      m.loginName.toLowerCase().includes(roleSearchTerm.toLowerCase()) ||
+                                      m.deptName.toLowerCase().includes(roleSearchTerm.toLowerCase());
+                                    return matchesFilter && matchesSearch;
+                                  })
+                                  .map((member) => (
+                                    <tr key={member.id} className="border-b border-card-border hover:bg-sidebar-hover/10 transition-colors">
+                                      <td className="p-3">
+                                        <div className="font-bold text-title">{member.name}</div>
+                                        <div className="text-[10px] font-mono text-text-sec">@{member.loginName}</div>
+                                      </td>
+                                      <td className="p-3 text-text-sec">
+                                        <div>{member.unitName}</div>
+                                        <div className="text-[10px] mt-0.5">{member.deptName}</div>
+                                      </td>
+                                      <td className="p-3">
+                                        <div className="flex flex-wrap gap-1.5">
+                                          {member.roles.map(r => (
+                                            <span
+                                              key={r.id}
+                                              className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold border ${getRoleBadgeStyle(r.key)}`}
+                                            >
+                                              <span>{r.name}</span>
+                                              <button
+                                                type="button"
+                                                onClick={() => handleToggleMemberRole(member.id, r.id, member.roles)}
+                                                className="hover:opacity-70 cursor-pointer ml-0.5"
+                                                title={`移除 ${r.name} 角色`}
+                                              >
+                                                <X className="w-3 h-3" />
+                                              </button>
+                                            </span>
+                                          ))}
+                                        </div>
+                                      </td>
+                                    </tr>
+                                  ))
+                              ) : (
+                                <tr>
+                                  <td colSpan={3} className="p-12 text-center text-text-sec italic bg-card-surface">
+                                    暂无符合条件的已授权角色成员。可在左侧搜索在职员工进行快速授权。
+                                  </td>
+                                </tr>
+                              )}
+                            </tbody>
+                          </table>
+                        </div>
                       </div>
-                    ) : memberSearch.trim() !== '' ? (
-                      <div className="text-center py-6 text-xs text-text-sec italic">未找到匹配的在职员工</div>
-                    ) : (
-                      <div className="text-center py-6 text-[10px] text-text-sec italic">在上方输入字符即可检索 6000+ OA 关联员工</div>
-                    )}
+                    </div>
                   </div>
                 </div>
+              ) : (
+                // Administrator Privileges Allocation Sub-Tab (Only for SYS_ADMIN)
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start w-full">
+                  {/* Search Pane */}
+                  <div className="bg-card-surface border border-card-border p-5 rounded-2xl flex flex-col gap-4 shadow-sm">
+                    <h4 className="font-bold text-title text-sm border-b border-card-border pb-3 flex items-center gap-2">
+                      <Shield className="w-4 h-4 text-zpje-brand" />
+                      搜索并添加管理员
+                    </h4>
 
-                {/* Administrators Table */}
-                <div className="lg:col-span-2 bg-card-surface border border-card-border rounded-2xl overflow-hidden shadow-sm">
-                  <div className="px-5 py-4 border-b border-card-border bg-sidebar-hover/20 flex items-center justify-between">
-                    <h4 className="font-bold text-title text-sm">当前管理员列表 ({adminMembers.length})</h4>
+                    <div className="flex flex-col gap-3">
+                      <div className="relative">
+                        <Search className="absolute left-3 top-2.5 h-4 w-4 text-text-sec" />
+                        <input
+                          type="text"
+                          placeholder="输入姓名或登录账号搜索..."
+                          value={memberSearch}
+                          onChange={(e) => {
+                            setMemberSearch(e.target.value);
+                            triggerMemberSearch(e.target.value);
+                          }}
+                          className="w-full pl-9 pr-4 py-2 rounded-xl bg-canvas border border-input-border text-title text-xs focus:outline-none focus:ring-1 focus:ring-title"
+                        />
+                      </div>
+
+                      {memberSearchLoading ? (
+                        <div className="text-center py-6 text-xs text-text-sec animate-pulse">正在查找在职员工...</div>
+                      ) : memberSearchResults.length > 0 ? (
+                        <div className="flex flex-col gap-2 max-h-80 overflow-y-auto border border-card-border rounded-xl p-2 bg-sidebar-hover/10">
+                          {memberSearchResults.map(m => (
+                            <div key={m.id} className="p-2 rounded-lg bg-card-surface border border-card-border flex items-center justify-between gap-3 text-xs">
+                              <div className="truncate min-w-0">
+                                <div className="font-bold text-title">{m.name}</div>
+                                <div className="text-[10px] text-text-sec font-mono">@{m.loginName}</div>
+                                <div className="text-[10px] text-text-sec/80 truncate">{m.unitName} - {m.deptName}</div>
+                              </div>
+
+                              <select
+                                onChange={(e) => handleAdminTypeChange(m.id, e.target.value as any, m)}
+                                defaultValue="NONE"
+                                className="px-2 py-1 rounded border border-input-border bg-canvas text-title text-[10px] font-semibold focus:outline-none shrink-0"
+                              >
+                                <option value="NONE">普通员工</option>
+                                <option value="SYS_ADMIN">系统管理员</option>
+                                <option value="OPS_ADMIN">运维管理员</option>
+                                <option value="DEPT_ADMIN">部门管理员</option>
+                              </select>
+                            </div>
+                          ))}
+                        </div>
+                      ) : memberSearch.trim() !== '' ? (
+                        <div className="text-center py-6 text-xs text-text-sec italic">未找到匹配的在职员工</div>
+                      ) : (
+                        <div className="text-center py-6 text-[10px] text-text-sec italic">在上方输入字符即可检索 6000+ OA 关联员工</div>
+                      )}
+                    </div>
                   </div>
 
-                  <table className="w-full text-left border-collapse text-xs">
-                    <thead>
-                      <tr className="bg-sidebar-hover/40 border-b border-card-border text-text-sec font-semibold">
-                        <th className="p-3">姓名 / 账号</th>
-                        <th className="p-3">所属单位与部门</th>
-                        <th className="p-3 w-44">管理员类型角色</th>
-                        <th className="p-3 w-20 text-right">操作</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {adminMembers.length > 0 ? (
-                        adminMembers.map((admin) => (
-                          <tr key={admin.id} className="border-b border-card-border hover:bg-sidebar-hover/10 transition-colors">
-                            <td className="p-3">
-                              <div className="font-bold text-title">{admin.name}</div>
-                              <div className="text-[10px] font-mono text-text-sec">@{admin.loginName}</div>
-                            </td>
-                            <td className="p-3 text-text-sec">
-                              <div>{admin.unitName}</div>
-                              <div className="text-[10px] mt-0.5">{admin.deptName}</div>
-                            </td>
-                            <td className="p-3">
-                              <select
-                                value={admin.adminType}
-                                onChange={(e) => handleAdminTypeChange(admin.id, e.target.value as any)}
-                                className={`px-3 py-1 rounded-full border text-[10px] font-bold outline-none cursor-pointer ${admin.adminType === 'SYS_ADMIN' ? 'bg-red-500/10 text-red-500 border-red-500/20' :
-                                  admin.adminType === 'OPS_ADMIN' ? 'bg-zpje-brand/10 text-zpje-brand border-zpje-brand/20' :
-                                    'bg-amber-500/10 text-amber-500 border-amber-500/20'
-                                  }`}
-                              >
-                                <option value="SYS_ADMIN" className="bg-card-surface text-title">系统管理员</option>
-                                <option value="OPS_ADMIN" className="bg-card-surface text-title">运维管理员</option>
-                                <option value="DEPT_ADMIN" className="bg-card-surface text-title">部门管理员</option>
-                                <option value="NONE" className="bg-card-surface text-red-500 font-bold">撤销管理员 (NONE)</option>
-                              </select>
-                            </td>
-                            <td className="p-3 text-right">
-                              <button
-                                onClick={() => {
-                                  if (window.confirm(`确认撤销管理员 “${admin.name}” 的全部特权吗？`)) {
-                                    handleAdminTypeChange(admin.id, 'NONE');
-                                  }
-                                }}
-                                className="text-red-500 hover:text-red-600 font-semibold"
-                              >
-                                撤销
-                              </button>
+                  {/* Administrators Table */}
+                  <div className="lg:col-span-2 bg-card-surface border border-card-border rounded-2xl overflow-hidden shadow-sm">
+                    <div className="px-5 py-4 border-b border-card-border bg-sidebar-hover/20 flex items-center justify-between">
+                      <h4 className="font-bold text-title text-sm">当前管理员列表 ({adminMembers.length})</h4>
+                    </div>
+
+                    <table className="w-full text-left border-collapse text-xs">
+                      <thead>
+                        <tr className="bg-sidebar-hover/40 border-b border-card-border text-text-sec font-semibold">
+                          <th className="p-3">姓名 / 账号</th>
+                          <th className="p-3">所属单位与部门</th>
+                          <th className="p-3 w-44">管理员类型角色</th>
+                          <th className="p-3 w-20 text-right">操作</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {adminMembers.length > 0 ? (
+                          adminMembers.map((admin) => (
+                            <tr key={admin.id} className="border-b border-card-border hover:bg-sidebar-hover/10 transition-colors">
+                              <td className="p-3">
+                                <div className="font-bold text-title">{admin.name}</div>
+                                <div className="text-[10px] font-mono text-text-sec">@{admin.loginName}</div>
+                              </td>
+                              <td className="p-3 text-text-sec">
+                                <div>{admin.unitName}</div>
+                                <div className="text-[10px] mt-0.5">{admin.deptName}</div>
+                              </td>
+                              <td className="p-3">
+                                <select
+                                  value={admin.adminType}
+                                  onChange={(e) => handleAdminTypeChange(admin.id, e.target.value as any)}
+                                  className={`px-3 py-1 rounded-full border text-[10px] font-bold outline-none cursor-pointer ${admin.adminType === 'SYS_ADMIN' ? 'bg-red-500/10 text-red-500 border-red-500/20' :
+                                    admin.adminType === 'OPS_ADMIN' ? 'bg-zpje-brand/10 text-zpje-brand border-zpje-brand/20' :
+                                      'bg-amber-500/10 text-amber-500 border-amber-500/20'
+                                    }`}
+                                >
+                                  <option value="SYS_ADMIN" className="bg-card-surface text-title">系统管理员</option>
+                                  <option value="OPS_ADMIN" className="bg-card-surface text-title">运维管理员</option>
+                                  <option value="DEPT_ADMIN" className="bg-card-surface text-title">部门管理员</option>
+                                  <option value="NONE" className="bg-card-surface text-red-500 font-bold">撤销管理员 (NONE)</option>
+                                </select>
+                              </td>
+                              <td className="p-3 text-right">
+                                <button
+                                  onClick={() => {
+                                    if (window.confirm(`确认撤销管理员 “${admin.name}” 的全部特权吗？`)) {
+                                      handleAdminTypeChange(admin.id, 'NONE');
+                                    }
+                                  }}
+                                  className="text-red-500 hover:text-red-600 font-semibold"
+                                >
+                                  撤销
+                                </button>
+                              </td>
+                            </tr>
+                          ))
+                        ) : (
+                          <tr>
+                            <td colSpan={4} className="p-12 text-center text-text-sec italic bg-card-surface">
+                              暂无人工授权的管理员角色。
                             </td>
                           </tr>
-                        ))
-                      ) : (
-                        <tr>
-                          <td colSpan={4} className="p-12 text-center text-text-sec italic bg-card-surface">
-                            暂无人工授权的管理员角色。
-                          </td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
-              </div>
+              )}
             </>
           )}
 
@@ -1548,7 +1938,8 @@ export default function AdminAppRegistry({
                         <option value="APP_ACCESS">子系统访问记录</option>
                         <option value="APP_MANAGE">应用管理操作</option>
                         <option value="WIDGET_MANAGE">Widget配置操作</option>
-                        <option value="ADMIN_MANAGE">管理员分配操作</option>
+                        <option value="ROLE_MANAGE">业务角色分配操作</option>
+                        <option value="ADMIN_MANAGE">特权管理员分配操作</option>
                       </select>
                     </div>
                   </div>
@@ -1588,6 +1979,9 @@ export default function AdminAppRegistry({
                               } else if (log.actionType === 'WIDGET_MANAGE') {
                                 typeColor = "bg-amber-500/10 text-amber-600 border-amber-500/20 dark:text-amber-400";
                                 typeText = "Widget配置";
+                              } else if (log.actionType === 'ROLE_MANAGE') {
+                                typeColor = "bg-teal-500/10 text-teal-600 border-teal-500/20 dark:text-teal-400 font-bold";
+                                typeText = "角色分配";
                               } else if (log.actionType === 'ADMIN_MANAGE') {
                                 typeColor = "bg-rose-500/10 text-rose-600 border-rose-500/20 dark:text-rose-400 font-bold";
                                 typeText = "管理员分配";

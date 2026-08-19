@@ -3,7 +3,7 @@ import { headers } from 'next/headers';
 
 export async function recordSystemLog(
   loginName: string,
-  actionType: 'SSO_LOGIN' | 'LOGOUT' | 'APP_ACCESS' | 'APP_MANAGE' | 'WIDGET_MANAGE' | 'ADMIN_MANAGE',
+  actionType: 'SSO_LOGIN' | 'LOGOUT' | 'APP_ACCESS' | 'APP_MANAGE' | 'WIDGET_MANAGE' | 'ADMIN_MANAGE' | 'ROLE_MANAGE',
   detail: string
 ) {
   try {

@@ -1,6 +1,6 @@
 import React from 'react';
 import { prisma } from '@/lib/prisma';
-import { checkAdmin, checkSystemAdmin } from '@/lib/auth';
+import { checkAdmin, checkSystemAdmin, checkOpsAdminOrAbove } from '@/lib/auth';
 import { headers } from 'next/headers';
 import AdminAppRegistry from './AdminAppRegistry';
 import { ShieldAlert, Home } from 'lucide-react';
@@ -12,6 +12,7 @@ export default async function AdminPage() {
   const userId = headersList.get('x-user-id') || 'guest';
   const isAdmin = await checkAdmin();
   const isSystemAdmin = await checkSystemAdmin();
+  const isOpsAdmin = await checkOpsAdminOrAbove();
 
   let currentUserInfo = null;
   if (userId !== 'guest') {
@@ -158,6 +159,26 @@ export default async function AdminPage() {
     }
   });
 
+  const initialRoleAssignedMembers = await prisma.member.findMany({
+    where: {
+      roles: {
+        some: {}
+      }
+    },
+    include: {
+      unit: { select: { name: true } },
+      department: { select: { name: true } },
+      roles: {
+        include: {
+          role: true
+        }
+      }
+    },
+    orderBy: {
+      name: 'asc'
+    }
+  });
+
   // Serialize models safely for client
   const serializedApps = apps.map((app) => ({
     id: app.id,
@@ -232,6 +253,19 @@ export default async function AdminPage() {
     unitName: m.unit?.name || '无单位'
   }));
 
+  const serializedRoleAssignedMembers = initialRoleAssignedMembers.map((m) => ({
+    id: m.id,
+    name: m.name,
+    loginName: m.loginName,
+    deptName: m.department?.name || '无部门',
+    unitName: m.unit?.name || '无单位',
+    roles: m.roles.map(r => ({
+      id: r.role.id,
+      key: r.role.key,
+      name: r.role.name
+    }))
+  }));
+
   const serializedSystemLogs = systemLogs.map((log) => ({
     id: log.id,
     loginName: log.loginName,
@@ -251,7 +285,9 @@ export default async function AdminPage() {
       roles={serializedRoles}
       initialWidgets={serializedWidgets}
       isSystemAdmin={isSystemAdmin}
+      isOpsAdmin={isOpsAdmin}
       initialAdminMembers={serializedAdminMembers}
+      initialRoleAssignedMembers={serializedRoleAssignedMembers}
       initialSystemLogs={serializedSystemLogs}
       userId={userId}
       userInfo={currentUserInfo}

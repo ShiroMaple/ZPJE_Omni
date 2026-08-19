@@ -63,3 +63,31 @@ export async function checkSystemAdmin(): Promise<boolean> {
     return false;
   }
 }
+
+/**
+ * 校验是否具备运维管理员或系统管理员权限 (SYS_ADMIN / OPS_ADMIN / admin)
+ */
+export async function checkOpsAdminOrAbove(): Promise<boolean> {
+  const headersList = await headers();
+  const userId = headersList.get('x-user-id');
+  if (!userId || userId === 'guest') {
+    return false;
+  }
+  
+  if (userId === 'admin') {
+    return true;
+  }
+  if (process.env.NODE_ENV !== 'production' && userId === 'zadmin') {
+    return true;
+  }
+  
+  try {
+    const member = await prisma.member.findUnique({
+      where: { loginName: userId }
+    });
+    return member?.adminType === 'SYS_ADMIN' || member?.adminType === 'OPS_ADMIN';
+  } catch (err) {
+    console.error('Error in checkOpsAdminOrAbove lookup:', err);
+    return false;
+  }
+}

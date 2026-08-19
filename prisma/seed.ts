@@ -63,7 +63,8 @@ async function main() {
     const roles = [
         { key: 'admin', name: '系统管理员' },
         { key: 'operator', name: '高级操作员' },
-        { key: 'user', name: '普通员工' }
+        { key: 'user', name: '普通员工' },
+        { key: 'leader', name: '领导' }
     ];
     for (const role of roles) {
         await prisma.role.upsert({
