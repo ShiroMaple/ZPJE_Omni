@@ -42,6 +42,7 @@ export async function POST(request: NextRequest) {
     const {
       key,
       name,
+      subtitle,
       description,
       url,
       icon,
@@ -70,6 +71,7 @@ export async function POST(request: NextRequest) {
       data: {
         key,
         name,
+        subtitle: subtitle || null,
         description,
         url,
         icon,

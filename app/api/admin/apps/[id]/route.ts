@@ -19,6 +19,7 @@ export async function PUT(
     const {
       key,
       name,
+      subtitle,
       description,
       url,
       icon,
@@ -57,6 +58,7 @@ export async function PUT(
         data: {
           key: key !== undefined ? key : app.key,
           name: name !== undefined ? name : app.name,
+          subtitle: subtitle !== undefined ? subtitle : app.subtitle,
           description: description !== undefined ? description : app.description,
           url: url !== undefined ? url : app.url,
           icon: icon !== undefined ? icon : app.icon,

@@ -32,6 +32,7 @@ import Sidebar from './Sidebar';
 interface AppConfig {
   id: string;
   name: string;
+  subtitle?: string | null;
   description: string;
   url: string;
   status: 'active' | 'maintenance' | 'offline';
@@ -46,6 +47,7 @@ interface DBApp {
   id: string;
   key: string;
   name: string;
+  subtitle?: string | null;
   description: string | null;
   url: string;
   icon: string | null;
@@ -323,6 +325,7 @@ export default function Dashboard({ userId, initialApps, departments, isAdmin, u
     return {
       id: app.id,
       name: app.name,
+      subtitle: app.subtitle || null,
       description: app.description || '',
       url: app.url,
       status,
@@ -348,6 +351,7 @@ export default function Dashboard({ userId, initialApps, departments, isAdmin, u
   const filteredApps = mappedApps.filter((app) => {
     const matchesSearch =
       app.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (app.subtitle && app.subtitle.toLowerCase().includes(searchQuery.toLowerCase())) ||
       app.tag.toLowerCase().includes(searchQuery.toLowerCase()) ||
       app.description.toLowerCase().includes(searchQuery.toLowerCase());
 
@@ -561,27 +565,34 @@ export default function Dashboard({ userId, initialApps, departments, isAdmin, u
         }}
       >
         <div>
-          {/* Top Row: 44x44px Duotone Icon + Right Controls (Status & Favorite) */}
-          <div className="flex items-center justify-between mb-3">
-            {/* 44x44px Duotone Icon */}
-            <div
-              className="w-11 h-11 rounded-xl flex items-center justify-center transition-transform duration-300 group-hover:scale-105 shadow-xs shrink-0"
-              style={{
-                background: `linear-gradient(135deg, rgba(${rgbColor}, ${theme === 'dark' ? '0.25' : '0.14'}), rgba(${rgbColor}, ${theme === 'dark' ? '0.10' : '0.05'}))`,
-                color: hexColor,
-                border: `1px solid rgba(${rgbColor}, 0.2)`
-              }}
-            >
-              <IconComponent className="w-5 h-5" />
+          {/* Top Row: [44x44px Duotone Icon + Department Tag] on Left, [Slow-Breathing Green Dot + Favorite] on Right */}
+          <div className="flex items-center justify-between mb-3.5 gap-2">
+            {/* Left: Icon + Department Tag */}
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div
+                className="w-11 h-11 rounded-xl flex items-center justify-center transition-transform duration-300 group-hover:scale-105 shadow-xs shrink-0"
+                style={{
+                  background: `linear-gradient(135deg, rgba(${rgbColor}, ${theme === 'dark' ? '0.25' : '0.14'}), rgba(${rgbColor}, ${theme === 'dark' ? '0.10' : '0.05'}))`,
+                  color: hexColor,
+                  border: `1px solid rgba(${rgbColor}, 0.2)`
+                }}
+              >
+                <IconComponent className="w-5 h-5" />
+              </div>
+
+              {app.tag && (
+                <span className="px-2 py-0.5 rounded-md text-[11px] font-semibold bg-sidebar-hover text-text-sec border border-card-border/80 truncate max-w-[130px]" title={app.tag}>
+                  {app.tag}
+                </span>
+              )}
             </div>
 
-            {/* Right Status Indicator & Favorite ⭐ */}
-            <div className="flex items-center gap-2">
+            {/* Right: Slow-Breathing Status Dot & Favorite Star ⭐ */}
+            <div className="flex items-center gap-2 shrink-0">
               {/* Minimal Status Indicator */}
               {app.status === 'active' ? (
-                <div className="relative flex items-center justify-center p-1" title="服务运行正常">
-                  <span className="w-2 h-2 rounded-full bg-emerald-500 shadow-emerald-500/50 animate-pulse" />
-                  <span className="absolute inline-flex h-full w-full rounded-full opacity-60 animate-ping bg-emerald-500 scale-75" />
+                <div className="flex items-center justify-center p-1" title="服务运行正常">
+                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-soft-breath" />
                 </div>
               ) : (
                 <div
@@ -615,21 +626,19 @@ export default function Dashboard({ userId, initialApps, departments, isAdmin, u
             </div>
           </div>
 
-          {/* Middle: Department Tag + Main Title + Description */}
+          {/* Middle: Main Title + Subtitle + Description */}
           <div className="flex flex-col">
-            {/* Department Tag (轻量描边胶囊标签) */}
-            {app.tag && (
-              <div className="mb-1.5">
-                <span className="inline-block px-2 py-0.5 rounded-md text-[11px] font-medium bg-sidebar-hover text-text-sec border border-card-border/80">
-                  {app.tag}
-                </span>
-              </div>
-            )}
-
             {/* App Main Title */}
-            <h3 className="text-base font-bold text-title group-hover:text-zpje-brand dark:group-hover:text-zpje-accent transition-colors line-clamp-2 leading-snug break-words">
+            <h3 className="text-base font-bold text-title group-hover:text-zpje-brand dark:group-hover:text-zpje-accent transition-colors line-clamp-1 leading-snug break-words">
               {app.name}
             </h3>
+
+            {/* App Subtitle */}
+            {app.subtitle && (
+              <div className="text-xs font-semibold text-zpje-accent dark:text-zpje-accent/90 mt-0.5 truncate tracking-tight" title={app.subtitle}>
+                {app.subtitle}
+              </div>
+            )}
 
             {/* App Description */}
             <p className="mt-1.5 text-xs text-text-sec leading-relaxed line-clamp-2 break-words">
@@ -638,15 +647,20 @@ export default function Dashboard({ userId, initialApps, departments, isAdmin, u
           </div>
         </div>
 
-        {/* Bottom Footer: "访问 →" or Maintenance notice */}
-        <div className="mt-4 pt-2.5 border-t border-card-border/60 flex items-center justify-between text-xs font-semibold">
-          <span className="text-text-sec font-medium">
-            {isMaintenanceMode ? '系统维护中' : (isOffline ? '服务已离线' : '数字化系统')}
-          </span>
+        {/* Bottom Footer: "访问 →" without "数字化系统" on left */}
+        <div className="mt-3.5 pt-2 border-t border-card-border/60 flex items-center justify-between text-xs font-semibold">
+          <div>
+            {isMaintenanceMode && (
+              <span className="text-amber-500 font-medium">系统维护中</span>
+            )}
+            {isOffline && (
+              <span className="text-red-500 font-medium">服务已离线</span>
+            )}
+          </div>
 
           {!isMaintenanceMode && !isOffline && (
             <div
-              className="flex items-center gap-1 font-bold transition-all duration-200 group-hover:translate-x-0.5"
+              className="flex items-center gap-1 font-bold transition-all duration-200 group-hover:translate-x-0.5 ml-auto"
               style={{ color: hexColor }}
             >
               <span>访问</span>
@@ -655,7 +669,7 @@ export default function Dashboard({ userId, initialApps, departments, isAdmin, u
           )}
 
           {isAdmin && (isMaintenanceMode || isOffline) && (
-            <span className="text-[11px] text-zpje-accent font-medium hover:underline">
+            <span className="text-[11px] text-zpje-accent font-medium hover:underline ml-auto">
               管理配置
             </span>
           )}

@@ -192,6 +192,7 @@ export default async function AdminPage() {
     id: app.id,
     key: app.key,
     name: app.name,
+    subtitle: app.subtitle || null,
     description: app.description || null,
     url: app.url,
     icon: app.icon || null,

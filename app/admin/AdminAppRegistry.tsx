@@ -55,6 +55,7 @@ interface DBApp {
   id: string;
   key: string;
   name: string;
+  subtitle?: string | null;
   description: string | null;
   url: string;
   icon: string | null;
@@ -424,6 +425,7 @@ export default function AdminAppRegistry({
   // App Form State
   const [key, setKey] = useState('');
   const [name, setName] = useState('');
+  const [subtitle, setSubtitle] = useState('');
   const [description, setDescription] = useState('');
   const [url, setUrl] = useState('');
   const [icon, setIcon] = useState('LayoutDashboard');
@@ -679,6 +681,7 @@ export default function AdminAppRegistry({
     setEditingApp(null);
     setKey('');
     setName('');
+    setSubtitle('');
     setDescription('');
     setUrl('');
     setIcon('LayoutDashboard');
@@ -704,6 +707,7 @@ export default function AdminAppRegistry({
     setEditingApp(app);
     setKey(app.key);
     setName(app.name);
+    setSubtitle(app.subtitle || '');
     setDescription(app.description || '');
     setUrl(app.url);
     setIcon(app.icon || 'LayoutDashboard');
@@ -743,6 +747,7 @@ export default function AdminAppRegistry({
       const payload = {
         key,
         name,
+        subtitle: subtitle.trim() || undefined,
         description,
         url,
         icon,
@@ -2816,6 +2821,20 @@ export default function AdminAppRegistry({
                       className="px-3 py-2 rounded-xl border border-input-border bg-canvas text-title text-sm focus:outline-none focus:ring-1 focus:ring-zpje-accent"
                     />
                   </div>
+                </div>
+
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-xs font-bold text-text-sec uppercase tracking-wider">
+                    应用副标题 / 英文短句
+                    <span className="text-text-sec/60 font-normal ml-1">(呈现在主标题下方，如 Carbon Emission & Energy)</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={subtitle}
+                    onChange={(e) => setSubtitle(e.target.value)}
+                    placeholder="例如: 企业双碳与能耗综合管控中心"
+                    className="px-3 py-2 rounded-xl border border-input-border bg-canvas text-title text-sm focus:outline-none focus:ring-1 focus:ring-zpje-accent"
+                  />
                 </div>
 
                 <div className="flex flex-col gap-1.5">

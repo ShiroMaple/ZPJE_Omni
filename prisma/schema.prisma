@@ -11,6 +11,7 @@ model App {
   id          String   @id @default(cuid())
   key         String   @unique // 唯一样本标识，如 "CarbonPlatform"
   name        String   // 显示名称，如 "能碳管理平台"
+  subtitle    String?  // 应用副标题/英文短句或定位说明
   description String?  @db.Text // 简介/描述
   url         String   // 访问入口 URL
   icon        String?  // 图标名称 (如 Lucide 图标名 "Zap", "Activity")

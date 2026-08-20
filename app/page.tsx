@@ -147,6 +147,7 @@ export default async function Page() {
     id: app.id,
     key: app.key,
     name: app.name,
+    subtitle: app.subtitle || null,
     description: app.description,
     url: app.url,
     icon: app.icon,
