@@ -2,6 +2,11 @@
 
 This file records substantive progress in reverse-chronological order — newest entry at the top, right below this line. Keep each entry short — summary and pointer only; conclusions settle into `cairn/<topic>.md`.
 
+## 2026-08-20 · 生产服务器部署完成
+- 代码同步并推送到 GitHub 远程仓库 `ShiroMaple/ZPJE_Omni`。
+- 生产服务器（192.168.103.191）完成代码同步、Prisma 客户端重新生成、角色表迁移与预置数据同步、生产环境打包构建（`pnpm build`）与 PM2 服务平滑重启（`pm2 restart Omni`）。
+- 生产环境服务状态已验证（HTTP 200 OK，Ready in 218ms）。
+
 ## 2026-08-20 · 角色权限体系解耦与 Master-Detail 角色中心重构
 - 彻底解耦后台管理特权（`Member.adminType`）与业务访问角色（`roles` / `member_roles`），清洗废弃角色字典。
 - 业务角色管理重构为 Master-Detail 左右分栏工作台，支持管理员编辑业务角色的 key、name、description 与安全删除角色。
