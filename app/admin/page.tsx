@@ -103,7 +103,8 @@ export default async function AdminPage() {
       app: {
         select: {
           name: true,
-          key: true
+          key: true,
+          color: true
         }
       }
     },
@@ -249,6 +250,7 @@ export default async function AdminPage() {
     app: {
       name: log.app?.name || '未知应用',
       key: log.app?.key || 'unknown',
+      color: log.app?.color || null
     },
   }));
 

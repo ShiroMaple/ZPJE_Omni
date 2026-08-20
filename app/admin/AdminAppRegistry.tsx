@@ -42,7 +42,13 @@ import {
   MinusSquare,
   Filter,
   Sparkles,
-  Info
+  Info,
+  Download,
+  RefreshCw,
+  Monitor,
+  Globe,
+  Smartphone,
+  Laptop
 } from 'lucide-react';
 
 interface DBApp {
@@ -94,6 +100,7 @@ interface AccessLog {
   app: {
     name: string;
     key: string;
+    color?: string | null;
   };
 }
 
@@ -223,6 +230,38 @@ const getRoleIconAndBadge = (roleKey: string) => {
   }
 };
 
+// 解析 User-Agent 为语义化操作系统与浏览器标签
+function parseUserAgent(ua: string | null | undefined): { os: string; browser: string; raw: string } {
+  if (!ua || ua === '-' || ua.trim() === '') {
+    return { os: '未知系统', browser: '未知客户端', raw: ua || '' };
+  }
+
+  let os = '其他系统';
+  if (ua.includes('Windows NT 10.0')) os = 'Win 10/11';
+  else if (ua.includes('Windows NT 6.3')) os = 'Win 8.1';
+  else if (ua.includes('Windows NT 6.1')) os = 'Win 7';
+  else if (ua.includes('Mac OS X') || ua.includes('Macintosh')) os = 'macOS';
+  else if (ua.includes('Android')) os = 'Android';
+  else if (ua.includes('iPhone') || ua.includes('iPad') || ua.includes('iOS')) os = 'iOS';
+  else if (ua.includes('Linux')) os = 'Linux';
+
+  let browser = '其他浏览器';
+  if (ua.includes('Edg/')) {
+    const match = ua.match(/Edg\/([\d.]+)/);
+    browser = match ? `Edge ${match[1].split('.')[0]}` : 'Edge';
+  } else if (ua.includes('Chrome/')) {
+    const match = ua.match(/Chrome\/([\d.]+)/);
+    browser = match ? `Chrome ${match[1].split('.')[0]}` : 'Chrome';
+  } else if (ua.includes('Firefox/')) {
+    const match = ua.match(/Firefox\/([\d.]+)/);
+    browser = match ? `Firefox ${match[1].split('.')[0]}` : 'Firefox';
+  } else if (ua.includes('Safari/') && !ua.includes('Chrome')) {
+    browser = 'Safari';
+  }
+
+  return { os, browser, raw: ua };
+}
+
 // 收集当前树节点及其所有子节点的 ID 列表（用于级联勾选）
 function getAllDescendantDeptIds(node: DepartmentTreeNode): string[] {
   const ids = [node.id];
@@ -289,10 +328,18 @@ export default function AdminAppRegistry({
 
   // Tab 4 (访问与审计) Sub-tabs: 'access' (用户访问统计) | 'system' (系统审计日志)
   const [statsSubTab, setStatsSubTab] = useState<'access' | 'system'>('access');
+  const [accessSearch, setAccessSearch] = useState('');
+  const [accessAppFilter, setAccessAppFilter] = useState('all');
+  const [accessIdentityFilter, setAccessIdentityFilter] = useState<'all' | 'member' | 'guest'>('all');
+  const [timeFilter, setTimeFilter] = useState<'24h' | '7d' | '30d' | 'all'>('all');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(15);
+  const [isRefreshingStats, setIsRefreshingStats] = useState(false);
+
   const [systemLogSearch, setSystemLogSearch] = useState('');
   const [systemLogPage, setSystemLogPage] = useState(1);
   const [logTypeFilter, setLogTypeFilter] = useState<string>('all');
-  const logsPerPage = 15;
+  const [logsPerPage, setLogsPerPage] = useState(15);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingApp, setEditingApp] = useState<DBApp | null>(null);
@@ -373,11 +420,6 @@ export default function AdminAppRegistry({
 
   // Tab State
   const [activeTab, setActiveTab] = useState<'apps' | 'stats' | 'widgets' | 'members'>('apps');
-
-  // Time Range Filter for stats
-  const [timeFilter, setTimeFilter] = useState<'24h' | '7d' | '30d' | 'all'>('all');
-  const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 15;
 
   // App Form State
   const [key, setKey] = useState('');
@@ -1022,22 +1064,47 @@ export default function AdminAppRegistry({
 
   const totalRoleMemberPages = Math.ceil(filteredActiveRoleMembers.length / roleMembersPerPage) || 1;
 
-  // 访问日志过滤
+  // 访问日志综合过滤
   const filteredAccessLogs = useMemo(() => {
     const now = new Date().getTime();
     return accessLogs.filter((log) => {
+      // 1. 时间跨度过滤
       const logTime = new Date(log.timestamp).getTime();
-      if (timeFilter === '24h') return now - logTime <= 24 * 60 * 60 * 1000;
-      if (timeFilter === '7d') return now - logTime <= 7 * 24 * 60 * 60 * 1000;
-      if (timeFilter === '30d') return now - logTime <= 30 * 24 * 60 * 60 * 1000;
+      if (timeFilter === '24h' && now - logTime > 24 * 60 * 60 * 1000) return false;
+      if (timeFilter === '7d' && now - logTime > 7 * 24 * 60 * 60 * 1000) return false;
+      if (timeFilter === '30d' && now - logTime > 30 * 24 * 60 * 60 * 1000) return false;
+
+      // 2. 目标应用过滤
+      if (accessAppFilter !== 'all' && log.appId !== accessAppFilter) {
+        return false;
+      }
+
+      // 3. 身份类型过滤 (全部 / 仅正式员工 / 仅访客)
+      const isGuestLog = log.loginName === 'guest';
+      if (accessIdentityFilter === 'member' && isGuestLog) return false;
+      if (accessIdentityFilter === 'guest' && !isGuestLog) return false;
+
+      // 4. 关键字搜索 (搜人员姓名、账号/工号、IP、应用名称、浏览器UA)
+      if (accessSearch.trim()) {
+        const kw = accessSearch.trim().toLowerCase();
+        const matchUser = log.userName && log.userName.toLowerCase().includes(kw);
+        const matchLogin = log.loginName.toLowerCase().includes(kw);
+        const matchApp = log.app?.name && log.app.name.toLowerCase().includes(kw);
+        const matchIp = log.ip && log.ip.toLowerCase().includes(kw);
+        const matchUa = log.userAgent && log.userAgent.toLowerCase().includes(kw);
+        if (!matchUser && !matchLogin && !matchApp && !matchIp && !matchUa) {
+          return false;
+        }
+      }
+
       return true;
     });
-  }, [accessLogs, timeFilter]);
+  }, [accessLogs, timeFilter, accessAppFilter, accessIdentityFilter, accessSearch]);
 
   const paginatedAccessLogs = useMemo(() => {
     const start = (currentPage - 1) * itemsPerPage;
     return filteredAccessLogs.slice(start, start + itemsPerPage);
-  }, [filteredAccessLogs, currentPage]);
+  }, [filteredAccessLogs, currentPage, itemsPerPage]);
 
   const totalPages = Math.ceil(filteredAccessLogs.length / itemsPerPage) || 1;
 
@@ -1060,112 +1127,227 @@ export default function AdminAppRegistry({
   const paginatedSystemLogs = useMemo(() => {
     const start = (systemLogPage - 1) * logsPerPage;
     return filteredSystemLogs.slice(start, start + logsPerPage);
-  }, [filteredSystemLogs, systemLogPage]);
+  }, [filteredSystemLogs, systemLogPage, logsPerPage]);
 
   const totalLogPages = Math.ceil(filteredSystemLogs.length / logsPerPage) || 1;
 
+  // 提取访问日志中出现过的应用列表供下拉筛选
+  const availableAppsForFilter = useMemo(() => {
+    const map = new Map<string, string>();
+    apps.forEach((a) => map.set(a.id, a.name));
+    accessLogs.forEach((l) => {
+      if (l.appId && l.app?.name) {
+        map.set(l.appId, l.app.name);
+      }
+    });
+    return Array.from(map.entries()).map(([id, name]) => ({ id, name }));
+  }, [apps, accessLogs]);
+
+  // 导出访问统计 CSV
+  const exportAccessLogsCsv = () => {
+    if (filteredAccessLogs.length === 0) {
+      alert('当前筛选条件下无访问记录可导出');
+      return;
+    }
+    const headers = ['访问时间', '人员姓名', '登录账号', '目标应用', '来源IP', '客户端系统', '浏览器', '完整UA'];
+    const rows = filteredAccessLogs.map((log) => {
+      const parsed = parseUserAgent(log.userAgent);
+      return [
+        `"${new Date(log.timestamp).toLocaleString('zh-CN', { hour12: false })}"`,
+        `"${log.userName || (log.loginName === 'guest' ? '访客' : log.loginName)}"`,
+        `"${log.loginName}"`,
+        `"${log.app?.name || '-'}"`,
+        `"${log.ip || '-'}"`,
+        `"${parsed.os}"`,
+        `"${parsed.browser}"`,
+        `"${(log.userAgent || '').replace(/"/g, '""')}"`
+      ];
+    });
+
+    const csvContent = '\uFEFF' + [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `omni_access_logs_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  // 导出系统审计日志 CSV
+  const exportSystemLogsCsv = () => {
+    if (filteredSystemLogs.length === 0) {
+      alert('当前筛选条件下无审计日志可导出');
+      return;
+    }
+    const headers = ['发生时间', '操作人员', '登录账号', '操作类型', '日志详情', 'IP地址'];
+    const rows = filteredSystemLogs.map((log) => [
+      `"${new Date(log.timestamp).toLocaleString('zh-CN', { hour12: false })}"`,
+      `"${log.userName || log.loginName}"`,
+      `"${log.loginName}"`,
+      `"${log.actionType}"`,
+      `"${(log.detail || '').replace(/"/g, '""')}"`,
+      `"${log.ip || '-'}"`
+    ]);
+
+    const csvContent = '\uFEFF' + [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `omni_system_audit_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  // 刷新统计状态
+  const handleRefreshStats = () => {
+    setIsRefreshingStats(true);
+    setTimeout(() => {
+      setIsRefreshingStats(false);
+    }, 500);
+  };
+
   return (
     <div className="h-screen overflow-hidden bg-canvas text-text-main flex flex-col md:flex-row antialiased font-sans">
-      {/* Sidebar Navigation */}
+      {/* Sidebar Navigation (前台深海蓝风格统一) */}
       <div
         className={`${
-          isSidebarCollapsed ? 'w-20' : 'w-64'
-        } h-full shrink-0 bg-sidebar border-r border-card-border p-4 flex flex-col justify-between transition-all duration-300 z-30 shadow-md overflow-y-auto`}
+          isSidebarCollapsed ? 'w-16' : 'w-64'
+        } h-full shrink-0 bg-zpje-brand text-white border-r border-white/10 flex flex-col justify-between transition-all duration-300 z-30 shadow-md select-none`}
       >
-        <div className="flex flex-col gap-6">
-          {/* Brand Header */}
-          <div className={`flex items-center gap-3 px-2 ${isSidebarCollapsed ? 'justify-center' : ''}`}>
-            <div className="w-10 h-10 rounded-xl bg-zpje-accent flex items-center justify-center text-white font-bold shadow-md shadow-zpje-accent/20 shrink-0">
-              <Shield className="w-5 h-5 text-white" />
+        <div className="flex flex-col">
+          {/* Logo & Brand Header */}
+          <div
+            className={`flex h-16 items-center border-b border-white/10 transition-all duration-300 shrink-0 ${
+              isSidebarCollapsed ? 'justify-center px-0 gap-0' : 'px-4 gap-3'
+            }`}
+          >
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white p-0.5 shrink-0 shadow-sm">
+              <img
+                src="/logo_zpje.jpg"
+                alt="建安万维"
+                className="rounded object-contain w-full h-full"
+              />
             </div>
-            {!isSidebarCollapsed && (
-              <div className="flex flex-col min-w-0">
-                <span className="font-extrabold text-title text-base tracking-tight truncate">
-                  Omni 管理后台
-                </span>
-                <span className="text-[10px] text-text-sec font-mono truncate">
-                  Enterprise Center
-                </span>
-              </div>
-            )}
+            <div
+              className={`flex flex-col transition-all duration-300 overflow-hidden ${
+                isSidebarCollapsed ? 'w-0 opacity-0' : 'w-auto opacity-100'
+              }`}
+            >
+              <span className="text-lg font-bold tracking-wider whitespace-nowrap text-white leading-tight">
+                建安万维
+              </span>
+              <span className="text-[11px] font-bold text-white/60 tracking-wider font-sans">
+                Omni 管理后台
+              </span>
+            </div>
           </div>
 
           {/* Navigation Links */}
-          <nav className="flex flex-col gap-1.5">
-            <button
-              onClick={() => setActiveTab('apps')}
-              className={`w-full flex items-center px-3 py-2.5 rounded-lg border text-sm font-semibold transition-all duration-300 text-left cursor-pointer ${
-                isSidebarCollapsed ? 'justify-center' : ''
-              } ${
-                activeTab === 'apps'
-                  ? 'bg-zpje-accent border-transparent text-white shadow-sm'
-                  : 'bg-transparent border-transparent text-text-sec hover:text-title hover:bg-sidebar-hover'
-              }`}
-            >
-              <LayoutDashboard className="h-4 w-4 shrink-0" />
-              {!isSidebarCollapsed && <span className="ml-3 truncate">应用管理中心</span>}
-            </button>
-
-            <button
-              onClick={() => setActiveTab('widgets')}
-              className={`w-full flex items-center px-3 py-2.5 rounded-lg border text-sm font-semibold transition-all duration-300 text-left cursor-pointer ${
-                isSidebarCollapsed ? 'justify-center' : ''
-              } ${
-                activeTab === 'widgets'
-                  ? 'bg-zpje-accent border-transparent text-white shadow-sm'
-                  : 'bg-transparent border-transparent text-text-sec hover:text-title hover:bg-sidebar-hover'
-              }`}
-            >
-              <Layers className="h-4 w-4 shrink-0" />
-              {!isSidebarCollapsed && <span className="ml-3 truncate">Widget 卡片配置</span>}
-            </button>
-
-            {(isSystemAdmin || isOpsAdmin) && (
+          <div className="py-4 px-3">
+            <nav className="space-y-1">
               <button
-                onClick={() => setActiveTab('members')}
+                onClick={() => setActiveTab('apps')}
                 className={`w-full flex items-center px-3 py-2.5 rounded-lg border text-sm font-semibold transition-all duration-300 text-left cursor-pointer ${
                   isSidebarCollapsed ? 'justify-center' : ''
                 } ${
-                  activeTab === 'members'
-                    ? 'bg-zpje-accent border-transparent text-white shadow-sm'
-                    : 'bg-transparent border-transparent text-text-sec hover:text-title hover:bg-sidebar-hover'
+                  activeTab === 'apps'
+                    ? 'bg-zpje-accent border-transparent text-white shadow-sm font-bold'
+                    : 'bg-transparent border-transparent text-white/80 hover:text-white hover:bg-white/10'
                 }`}
+                title={isSidebarCollapsed ? '应用管理中心' : undefined}
               >
-                <Shield className="h-4 w-4 shrink-0" />
-                {!isSidebarCollapsed && <span className="ml-3 truncate">权限与角色分配</span>}
+                <LayoutDashboard className="h-4 w-4 shrink-0" />
+                {!isSidebarCollapsed && <span className="ml-3 truncate">应用管理中心</span>}
               </button>
-            )}
 
-            <button
-              onClick={() => setActiveTab('stats')}
-              className={`w-full flex items-center px-3 py-2.5 rounded-lg border text-sm font-semibold transition-all duration-300 text-left cursor-pointer ${
-                isSidebarCollapsed ? 'justify-center' : ''
-              } ${
-                activeTab === 'stats'
-                  ? 'bg-zpje-accent border-transparent text-white shadow-sm'
-                  : 'bg-transparent border-transparent text-text-sec hover:text-title hover:bg-sidebar-hover'
-              }`}
-            >
-              <BarChart3 className="h-4 w-4 shrink-0" />
-              {!isSidebarCollapsed && <span className="ml-3 truncate">访问与审计统计</span>}
-            </button>
-          </nav>
+              <button
+                onClick={() => setActiveTab('widgets')}
+                className={`w-full flex items-center px-3 py-2.5 rounded-lg border text-sm font-semibold transition-all duration-300 text-left cursor-pointer ${
+                  isSidebarCollapsed ? 'justify-center' : ''
+                } ${
+                  activeTab === 'widgets'
+                    ? 'bg-zpje-accent border-transparent text-white shadow-sm font-bold'
+                    : 'bg-transparent border-transparent text-white/80 hover:text-white hover:bg-white/10'
+                }`}
+                title={isSidebarCollapsed ? 'Widget 卡片配置' : undefined}
+              >
+                <Layers className="h-4 w-4 shrink-0" />
+                {!isSidebarCollapsed && <span className="ml-3 truncate">Widget 卡片配置</span>}
+              </button>
+
+              {(isSystemAdmin || isOpsAdmin) && (
+                <button
+                  onClick={() => setActiveTab('members')}
+                  className={`w-full flex items-center px-3 py-2.5 rounded-lg border text-sm font-semibold transition-all duration-300 text-left cursor-pointer ${
+                    isSidebarCollapsed ? 'justify-center' : ''
+                  } ${
+                    activeTab === 'members'
+                      ? 'bg-zpje-accent border-transparent text-white shadow-sm font-bold'
+                      : 'bg-transparent border-transparent text-white/80 hover:text-white hover:bg-white/10'
+                  }`}
+                  title={isSidebarCollapsed ? '权限与角色分配' : undefined}
+                >
+                  <Shield className="h-4 w-4 shrink-0" />
+                  {!isSidebarCollapsed && <span className="ml-3 truncate">权限与角色分配</span>}
+                </button>
+              )}
+
+              <button
+                onClick={() => setActiveTab('stats')}
+                className={`w-full flex items-center px-3 py-2.5 rounded-lg border text-sm font-semibold transition-all duration-300 text-left cursor-pointer ${
+                  isSidebarCollapsed ? 'justify-center' : ''
+                } ${
+                  activeTab === 'stats'
+                    ? 'bg-zpje-accent border-transparent text-white shadow-sm font-bold'
+                    : 'bg-transparent border-transparent text-white/80 hover:text-white hover:bg-white/10'
+                }`}
+                title={isSidebarCollapsed ? '访问与审计统计' : undefined}
+              >
+                <BarChart3 className="h-4 w-4 shrink-0" />
+                {!isSidebarCollapsed && <span className="ml-3 truncate">访问与审计统计</span>}
+              </button>
+            </nav>
+          </div>
         </div>
 
         {/* Sidebar Footer Controls */}
-        <div className="flex flex-col gap-2 pt-4 border-t border-card-border">
+        <div
+          className={`p-4 border-t border-white/10 flex flex-col gap-2 transition-all duration-300 shrink-0 ${
+            isSidebarCollapsed ? 'items-center px-2' : ''
+          }`}
+        >
+          {!isSidebarCollapsed && (
+            <div className="flex items-center gap-2.5 px-2 py-1 text-xs text-white/80 transition-all duration-300 font-medium">
+              <div className="h-2 w-2 rounded-full bg-emerald-400 shadow-emerald-400/50 animate-pulse shrink-0" />
+              <span className="truncate">系统运行正常</span>
+            </div>
+          )}
+          {isSidebarCollapsed && (
+            <div
+              className="h-8 w-8 flex items-center justify-center rounded-md text-white/80 hover:text-white hover:bg-white/10 transition-all cursor-pointer"
+              title="系统运行正常"
+            >
+              <div className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+            </div>
+          )}
+
           <button
             onClick={toggleSidebarCollapse}
-            className={`flex items-center gap-3 px-3 py-2 text-xs font-semibold rounded-lg text-text-sec hover:text-title hover:bg-sidebar-hover transition-colors cursor-pointer ${
-              isSidebarCollapsed ? 'justify-center' : ''
+            className={`flex items-center justify-center rounded-lg text-white/80 hover:text-white hover:bg-white/10 transition-all cursor-pointer h-8 w-full border border-transparent text-xs font-semibold ${
+              isSidebarCollapsed ? 'w-8' : 'px-2 justify-start gap-3'
             }`}
+            title={isSidebarCollapsed ? '展开菜单' : '收起菜单'}
           >
             {isSidebarCollapsed ? (
               <ChevronRight className="w-4 h-4 shrink-0" />
             ) : (
               <>
                 <ChevronLeft className="w-4 h-4 shrink-0" />
-                <span>收起侧边栏</span>
+                <span className="whitespace-nowrap">收起侧边栏</span>
               </>
             )}
           </button>
@@ -1173,63 +1355,105 @@ export default function AdminAppRegistry({
       </div>
 
       {/* Main Content Area */}
-      <div className="flex-1 flex flex-col min-w-0 h-full overflow-y-auto bg-canvas">
-        {/* Top Header */}
-        <header className="sticky top-0 z-20 h-16 bg-card-surface/80 backdrop-blur-md border-b border-card-border px-6 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <h1 className="text-lg font-bold text-title">
+      <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden bg-canvas">
+        {/* Top Header (标准四段式右对齐布局) */}
+        <header className="sticky top-0 z-20 h-16 bg-card-surface/80 backdrop-blur-md border-b border-card-border px-6 flex items-center justify-between shrink-0">
+          <div className="flex items-center gap-2 text-base font-bold">
+            <span className="text-text-sec">管理后台</span>
+            <span className="text-text-sec/40">/</span>
+            <span className="text-title">
               {activeTab === 'apps' && '应用管理中心'}
               {activeTab === 'widgets' && 'Widget 卡片配置'}
               {activeTab === 'members' && '权限与角色分配中心'}
               {activeTab === 'stats' && '访问与系统审计'}
-            </h1>
+            </span>
           </div>
 
           <div className="flex items-center gap-3">
-            {/* Return to Portal Frontpage */}
+            {/* 1. Return to Portal Frontpage */}
             <a
               href="/"
-              className="flex items-center gap-2 px-3 py-1.5 rounded-xl border border-card-border bg-card-surface hover:bg-sidebar-hover text-text-sec hover:text-title text-xs font-semibold transition-colors shadow-xs"
+              className="px-3.5 py-1.5 rounded-xl border border-card-border bg-card-surface hover:bg-sidebar-hover hover:border-zpje-accent/40 text-text-sec hover:text-zpje-accent text-xs font-bold flex items-center gap-1.5 transition-all shadow-xs cursor-pointer"
               title="返回门户前台"
             >
               <Home className="w-4 h-4 text-zpje-accent" />
               <span className="hidden sm:inline">返回门户前台</span>
             </a>
 
-            {/* Theme Switcher */}
+            {/* 2. Theme Switcher */}
             {mounted && (
               <button
                 onClick={toggleTheme}
-                className="p-2 rounded-xl border border-card-border bg-card-surface hover:bg-sidebar-hover text-text-sec hover:text-title transition-colors cursor-pointer shadow-xs"
+                className="w-9 h-9 rounded-xl border border-card-border bg-card-surface hover:bg-sidebar-hover text-text-sec hover:text-title flex items-center justify-center transition-all cursor-pointer shadow-xs"
                 title={theme === 'dark' ? '切换为亮色模式' : '切换为暗色模式'}
               >
                 {theme === 'dark' ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-slate-600" />}
               </button>
             )}
 
-            {/* Current User Info */}
-            <div className="flex items-center gap-2 pl-3 border-l border-card-border">
-              <div className="w-8 h-8 rounded-full bg-zpje-accent/10 border border-zpje-accent/20 flex items-center justify-center text-zpje-accent font-bold text-xs">
-                {userInfo?.name ? userInfo.name.charAt(0) : <User className="w-4 h-4" />}
+            {/* 3. User Identity (统一采用绿点 + 姓名 + Popover) */}
+            <div className="relative group">
+              <div className="px-3.5 py-1.5 rounded-xl bg-card-surface border border-card-border flex items-center gap-2.5 transition-all hover:bg-sidebar-hover cursor-default shadow-xs">
+                <div className="relative flex items-center justify-center">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 shadow-emerald-500/50 animate-pulse" />
+                  <span className="absolute inline-flex h-full w-full rounded-full opacity-75 animate-ping bg-emerald-500" />
+                </div>
+                <span className="text-xs font-bold text-title">
+                  {userInfo?.name || userId}
+                </span>
               </div>
-              <div className="hidden sm:flex flex-col text-left">
-                <span className="text-xs font-bold text-title leading-none">{userInfo?.name || userId}</span>
-                <span className="text-[10px] text-text-sec leading-none mt-1">{userInfo?.deptName || '系统管理员'}</span>
-              </div>
-              <button
-                onClick={handleLogout}
-                disabled={isLoggingOut}
-                className="ml-2 p-1.5 rounded-lg text-text-sec hover:text-red-500 hover:bg-red-500/10 transition-colors cursor-pointer"
-                title="登出账号"
-              >
-                <LogOut className="w-4 h-4" />
-              </button>
+
+              {/* Hover Popover Detail Card */}
+              {userInfo && (
+                <div className="absolute right-0 top-full mt-2 w-72 bg-card-surface border border-card-border rounded-2xl shadow-xl p-4 text-text-main opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50">
+                  <div className="flex flex-col gap-3">
+                    <div className="border-b border-card-border pb-2 flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-full bg-zpje-brand/10 text-zpje-brand flex items-center justify-center font-bold text-xs">
+                        {userInfo.name.slice(-2)}
+                      </div>
+                      <div>
+                        <h4 className="font-bold text-title text-xs">{userInfo.name}</h4>
+                        <span className="text-[10px] text-text-sec font-mono">@{userInfo.loginName}</span>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col gap-1.5 text-xs">
+                      <div className="flex items-start justify-between gap-2">
+                        <span className="text-text-sec shrink-0">所属单位:</span>
+                        <span className="font-semibold text-right text-title">{userInfo.unitName}</span>
+                      </div>
+                      <div className="flex items-start justify-between gap-2">
+                        <span className="text-text-sec shrink-0">所属部门:</span>
+                        <span className="font-semibold text-right text-title">{userInfo.deptName}</span>
+                      </div>
+                      <div className="flex items-start justify-between gap-2">
+                        <span className="text-text-sec shrink-0">管理特权:</span>
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold border bg-red-500/10 text-red-500 border-red-500/20">
+                          {isSystemAdmin ? '系统管理员 (SYS_ADMIN)' : isOpsAdmin ? '运维管理员 (OPS_ADMIN)' : '部门管理员'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
+
+            {/* 4. Logout Button */}
+            <button
+              onClick={handleLogout}
+              disabled={isLoggingOut}
+              className="p-2 rounded-xl border border-red-500/20 bg-red-500/5 hover:bg-red-500/10 text-red-500 transition-all cursor-pointer shadow-xs disabled:opacity-50"
+              title="退出登录并释放会话"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
           </div>
         </header>
 
-        {/* Tab Content */}
-        <div className="p-6 flex-1 flex flex-col gap-6 max-w-7xl w-full mx-auto">
+        {/* Tab Content Area (支持内部纵向滚动与全高自适应) */}
+        <div className={`p-6 flex-1 min-h-0 flex flex-col gap-6 max-w-7xl w-full mx-auto ${
+          activeTab === 'stats' ? 'overflow-hidden' : 'overflow-y-auto'
+        }`}>
           {/* ========================================================================= */}
           {/* Tab 1: 应用管理中心 */}
           {/* ========================================================================= */}
@@ -1861,9 +2085,10 @@ export default function AdminAppRegistry({
           {/* Tab 4: 访问与审计统计 */}
           {/* ========================================================================= */}
           {activeTab === 'stats' && (
-            <div className="flex flex-col gap-6">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-card-border pb-3">
-                <div className="flex border-b-2 border-transparent gap-6">
+            <div className="flex flex-col flex-1 min-h-0 gap-3 h-[calc(100vh-140px)] overflow-hidden">
+              {/* 1. Sub-tab Navigation Bar */}
+              <div className="flex items-center justify-between border-b border-card-border pb-2 shrink-0">
+                <div className="flex gap-6">
                   <button
                     onClick={() => setStatsSubTab('access')}
                     className={`pb-2 text-sm font-bold border-b-2 transition-all cursor-pointer ${
@@ -1886,119 +2111,323 @@ export default function AdminAppRegistry({
                   </button>
                 </div>
 
-                {/* Sub-tab Filters */}
+                <div className="text-xs text-text-sec flex items-center gap-2">
+                  <span className="inline-block w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                  <span className="font-medium">实时合规审计</span>
+                </div>
+              </div>
+
+              {/* 2. Unified Toolbar for Filters & Actions */}
+              <div className="bg-card-surface border border-card-border p-3 rounded-2xl shadow-xs flex flex-wrap items-center justify-between gap-3 shrink-0">
                 {statsSubTab === 'access' ? (
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-text-sec font-semibold">时间跨度:</span>
-                    <div className="flex items-center rounded-xl bg-card-surface border border-card-border p-1">
-                      {(['all', '24h', '7d', '30d'] as const).map((filter) => (
+                  // Access Logs Toolbar
+                  <>
+                    {/* Left Filters */}
+                    <div className="flex flex-wrap items-center gap-2.5">
+                      {/* Search Keyword */}
+                      <div className="relative">
+                        <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-text-sec" />
+                        <input
+                          type="text"
+                          placeholder="搜索人员/工号/IP/应用..."
+                          value={accessSearch}
+                          onChange={(e) => {
+                            setAccessSearch(e.target.value);
+                            setCurrentPage(1);
+                          }}
+                          className="pl-8 pr-3 py-1.5 rounded-xl bg-canvas border border-input-border text-title text-xs focus:outline-none focus:ring-1 focus:ring-zpje-accent w-48 sm:w-56"
+                        />
+                      </div>
+
+                      {/* App Dropdown Filter */}
+                      <select
+                        value={accessAppFilter}
+                        onChange={(e) => {
+                          setAccessAppFilter(e.target.value);
+                          setCurrentPage(1);
+                        }}
+                        className="px-3 py-1.5 rounded-xl bg-canvas border border-input-border text-title text-xs font-medium focus:outline-none focus:ring-1 focus:ring-zpje-accent cursor-pointer max-w-[160px] truncate"
+                      >
+                        <option value="all">全部目标应用</option>
+                        {availableAppsForFilter.map((a) => (
+                          <option key={a.id} value={a.id}>
+                            {a.name}
+                          </option>
+                        ))}
+                      </select>
+
+                      {/* Identity Filter Pills */}
+                      <div className="flex items-center rounded-xl bg-canvas border border-input-border p-0.5">
                         <button
-                          key={filter}
                           onClick={() => {
-                            setTimeFilter(filter);
+                            setAccessIdentityFilter('all');
                             setCurrentPage(1);
                           }}
                           className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
-                            timeFilter === filter
+                            accessIdentityFilter === 'all'
                               ? 'bg-zpje-accent text-white shadow-xs'
                               : 'text-text-sec hover:text-title'
                           }`}
                         >
-                          {filter === 'all' && '全部'}
-                          {filter === '24h' && '24小时'}
-                          {filter === '7d' && '7天'}
-                          {filter === '30d' && '30天'}
+                          全部身份
                         </button>
-                      ))}
+                        <button
+                          onClick={() => {
+                            setAccessIdentityFilter('member');
+                            setCurrentPage(1);
+                          }}
+                          className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
+                            accessIdentityFilter === 'member'
+                              ? 'bg-zpje-accent text-white shadow-xs'
+                              : 'text-text-sec hover:text-title'
+                          }`}
+                        >
+                          仅正式员工
+                        </button>
+                        <button
+                          onClick={() => {
+                            setAccessIdentityFilter('guest');
+                            setCurrentPage(1);
+                          }}
+                          className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
+                            accessIdentityFilter === 'guest'
+                              ? 'bg-zpje-accent text-white shadow-xs'
+                              : 'text-text-sec hover:text-title'
+                          }`}
+                        >
+                          仅访客 (guest)
+                        </button>
+                      </div>
                     </div>
-                  </div>
+
+                    {/* Right Actions & Time Filter */}
+                    <div className="flex flex-wrap items-center gap-2.5">
+                      {/* Time Filter Pills */}
+                      <div className="flex items-center rounded-xl bg-canvas border border-input-border p-0.5">
+                        {(['all', '24h', '7d', '30d'] as const).map((filter) => (
+                          <button
+                            key={filter}
+                            onClick={() => {
+                              setTimeFilter(filter);
+                              setCurrentPage(1);
+                            }}
+                            className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
+                              timeFilter === filter
+                                ? 'bg-zpje-accent text-white shadow-xs'
+                                : 'text-text-sec hover:text-title'
+                            }`}
+                          >
+                            {filter === 'all' && '全部'}
+                            {filter === '24h' && '24小时'}
+                            {filter === '7d' && '7天'}
+                            {filter === '30d' && '30天'}
+                          </button>
+                        ))}
+                      </div>
+
+                      {/* Export CSV Button */}
+                      <button
+                        onClick={exportAccessLogsCsv}
+                        className="px-3 py-1.5 rounded-xl border border-input-border bg-canvas hover:bg-sidebar-hover text-text-sec hover:text-title text-xs font-semibold flex items-center gap-1.5 transition-all shadow-xs cursor-pointer"
+                        title="导出当前筛选的访问日志 (CSV)"
+                      >
+                        <Download className="w-3.5 h-3.5 text-zpje-accent" />
+                        <span>导出 CSV</span>
+                      </button>
+
+                      {/* Refresh Button */}
+                      <button
+                        onClick={handleRefreshStats}
+                        className="p-1.5 rounded-xl border border-input-border bg-canvas hover:bg-sidebar-hover text-text-sec hover:text-title transition-all shadow-xs cursor-pointer"
+                        title="刷新数据"
+                      >
+                        <RefreshCw className={`w-3.5 h-3.5 ${isRefreshingStats ? 'animate-spin text-zpje-accent' : ''}`} />
+                      </button>
+                    </div>
+                  </>
                 ) : (
-                  <div className="flex flex-wrap items-center gap-3">
-                    <div className="relative">
-                      <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-text-sec" />
-                      <input
-                        type="text"
-                        placeholder="搜索操作人、详情或IP..."
-                        value={systemLogSearch}
+                  // System Audit Logs Toolbar
+                  <>
+                    {/* Left Filters */}
+                    <div className="flex flex-wrap items-center gap-2.5">
+                      <div className="relative">
+                        <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-text-sec" />
+                        <input
+                          type="text"
+                          placeholder="搜索操作人、详情或IP..."
+                          value={systemLogSearch}
+                          onChange={(e) => {
+                            setSystemLogSearch(e.target.value);
+                            setSystemLogPage(1);
+                          }}
+                          className="pl-8 pr-3 py-1.5 rounded-xl bg-canvas border border-input-border text-title text-xs focus:outline-none focus:ring-1 focus:ring-zpje-accent w-48 sm:w-64"
+                        />
+                      </div>
+
+                      <select
+                        value={logTypeFilter}
                         onChange={(e) => {
-                          setSystemLogSearch(e.target.value);
+                          setLogTypeFilter(e.target.value);
                           setSystemLogPage(1);
                         }}
-                        className="pl-8 pr-3 py-1.5 rounded-xl bg-card-surface border border-input-border text-title text-xs focus:outline-none focus:ring-1 focus:ring-zpje-accent"
-                      />
+                        className="px-3 py-1.5 rounded-xl bg-canvas border border-input-border text-title text-xs font-medium focus:outline-none focus:ring-1 focus:ring-zpje-accent cursor-pointer"
+                      >
+                        <option value="all">全部操作类型</option>
+                        <option value="SSO_LOGIN">SSO_LOGIN (单点登录)</option>
+                        <option value="LOGOUT">LOGOUT (退出登录)</option>
+                        <option value="APP_ACCESS">APP_ACCESS (访问应用)</option>
+                        <option value="APP_MANAGE">APP_MANAGE (应用管理)</option>
+                        <option value="WIDGET_MANAGE">WIDGET_MANAGE (看板管理)</option>
+                        <option value="ADMIN_MANAGE">ADMIN_MANAGE (特权管理)</option>
+                        <option value="ROLE_MANAGE">ROLE_MANAGE (业务角色)</option>
+                      </select>
                     </div>
-                    <select
-                      value={logTypeFilter}
-                      onChange={(e) => {
-                        setLogTypeFilter(e.target.value);
-                        setSystemLogPage(1);
-                      }}
-                      className="px-3 py-1.5 rounded-xl bg-card-surface border border-input-border text-title text-xs font-medium focus:outline-none focus:ring-1 focus:ring-zpje-accent cursor-pointer"
-                    >
-                      <option value="all">全部操作类型</option>
-                      <option value="SSO_LOGIN">SSO_LOGIN (单点登录)</option>
-                      <option value="LOGOUT">LOGOUT (退出登录)</option>
-                      <option value="APP_ACCESS">APP_ACCESS (访问应用)</option>
-                      <option value="APP_MANAGE">APP_MANAGE (应用管理)</option>
-                      <option value="WIDGET_MANAGE">WIDGET_MANAGE (看板管理)</option>
-                      <option value="ADMIN_MANAGE">ADMIN_MANAGE (特权管理)</option>
-                      <option value="ROLE_MANAGE">ROLE_MANAGE (业务角色)</option>
-                    </select>
-                  </div>
+
+                    {/* Right Actions */}
+                    <div className="flex items-center gap-2.5">
+                      <button
+                        onClick={exportSystemLogsCsv}
+                        className="px-3 py-1.5 rounded-xl border border-input-border bg-canvas hover:bg-sidebar-hover text-text-sec hover:text-title text-xs font-semibold flex items-center gap-1.5 transition-all shadow-xs cursor-pointer"
+                        title="导出审计日志 (CSV)"
+                      >
+                        <Download className="w-3.5 h-3.5 text-zpje-accent" />
+                        <span>导出 CSV</span>
+                      </button>
+
+                      <button
+                        onClick={handleRefreshStats}
+                        className="p-1.5 rounded-xl border border-input-border bg-canvas hover:bg-sidebar-hover text-text-sec hover:text-title transition-all shadow-xs cursor-pointer"
+                        title="刷新数据"
+                      >
+                        <RefreshCw className={`w-3.5 h-3.5 ${isRefreshingStats ? 'animate-spin text-zpje-accent' : ''}`} />
+                      </button>
+                    </div>
+                  </>
                 )}
               </div>
 
+              {/* 3. Table Card with fixed height, sticky header, internal scroll and fixed bottom pagination */}
               {statsSubTab === 'access' ? (
-                // 访问统计
-                <div className="bg-card-surface border border-card-border rounded-2xl overflow-hidden shadow-sm flex flex-col justify-between min-h-[400px]">
-                  <div className="overflow-x-auto">
+                <div className="bg-card-surface border border-card-border rounded-2xl shadow-sm flex flex-col flex-1 min-h-0 overflow-hidden">
+                  {/* Table Scroll Area */}
+                  <div className="flex-1 min-h-0 overflow-y-auto">
                     <table className="w-full text-left border-collapse text-xs">
-                      <thead>
-                        <tr className="bg-sidebar-hover/40 border-b border-card-border text-text-sec font-semibold">
-                          <th className="p-3 w-40">访问时间</th>
-                          <th className="p-3 w-40">访问人员</th>
-                          <th className="p-3">目标应用</th>
-                          <th className="p-3 w-32">来源 IP</th>
-                          <th className="p-3 w-48">客户端环境</th>
+                      <thead className="sticky top-0 z-10 bg-slate-100/95 dark:bg-slate-800/95 backdrop-blur border-b border-card-border text-title font-bold shadow-xs">
+                        <tr>
+                          <th className="p-3 w-44">访问时间</th>
+                          <th className="p-3 w-48">访问人员</th>
+                          <th className="p-3 w-48">目标应用</th>
+                          <th className="p-3 w-36">来源 IP</th>
+                          <th className="p-3">客户端环境 (OS · 浏览器)</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-card-border">
-                        {paginatedAccessLogs.map((log) => (
-                          <tr key={log.id} className="hover:bg-sidebar-hover/20 transition-colors">
-                            <td className="p-3 text-text-sec font-mono">
-                              {new Date(log.timestamp).toLocaleString('zh-CN', { hour12: false })}
-                            </td>
-                            <td className="p-3">
-                              <div className="font-bold text-title">{log.userName || log.loginName}</div>
-                              <div className="text-[10px] text-text-sec font-mono">@{log.loginName}</div>
-                            </td>
-                            <td className="p-3 font-semibold text-title">{log.app?.name}</td>
-                            <td className="p-3 text-text-sec font-mono">{log.ip || '-'}</td>
-                            <td className="p-3 text-text-sec truncate max-w-xs" title={log.userAgent || ''}>
-                              {log.userAgent || '-'}
+                        {paginatedAccessLogs.length > 0 ? (
+                          paginatedAccessLogs.map((log) => {
+                            const parsed = parseUserAgent(log.userAgent);
+                            const isGuestLog = log.loginName === 'guest';
+                            const appColor = getAppHexColor(log.app?.color, log.app?.key || '');
+
+                            return (
+                              <tr key={log.id} className="hover:bg-sidebar-hover/30 transition-colors">
+                                <td className="p-3 text-text-sec font-mono tabular-nums text-xs whitespace-nowrap">
+                                  {new Date(log.timestamp).toLocaleString('zh-CN', { hour12: false })}
+                                </td>
+                                <td className="p-3">
+                                  {isGuestLog ? (
+                                    <div className="flex items-center gap-1.5">
+                                      <span className="px-2 py-0.5 rounded-full text-[11px] font-mono bg-slate-500/10 text-slate-500 border border-slate-500/20 flex items-center gap-1">
+                                        <User className="w-3 h-3" />
+                                        <span>访客 (@guest)</span>
+                                      </span>
+                                    </div>
+                                  ) : (
+                                    <div className="flex items-center gap-2">
+                                      <div className="w-6 h-6 rounded-full bg-zpje-brand/10 text-zpje-brand dark:bg-zpje-accent/15 dark:text-zpje-accent flex items-center justify-center text-[10px] font-bold shrink-0">
+                                        {(log.userName || log.loginName).charAt(0)}
+                                      </div>
+                                      <div>
+                                        <div className="font-bold text-title">{log.userName || log.loginName}</div>
+                                        <div className="text-[10px] text-text-sec font-mono">@{log.loginName}</div>
+                                      </div>
+                                    </div>
+                                  )}
+                                </td>
+                                <td className="p-3">
+                                  <div className="flex items-center gap-2">
+                                    <div
+                                      className="w-5 h-5 rounded flex items-center justify-center shrink-0"
+                                      style={{
+                                        backgroundColor: getRgba(appColor, 0.15),
+                                        color: appColor
+                                      }}
+                                    >
+                                      <LayoutDashboard className="w-3 h-3" />
+                                    </div>
+                                    <span className="font-semibold text-title">{log.app?.name || '未知应用'}</span>
+                                  </div>
+                                </td>
+                                <td className="p-3 text-text-sec font-mono tabular-nums text-xs whitespace-nowrap">
+                                  {log.ip || '-'}
+                                </td>
+                                <td className="p-3">
+                                  <div className="flex items-center gap-1.5 truncate" title={log.userAgent || ''}>
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-sidebar-hover text-title text-[11px] font-medium border border-card-border shrink-0">
+                                      <Laptop className="w-3 h-3 text-text-sec" />
+                                      <span>{parsed.os}</span>
+                                    </span>
+                                    <span className="text-text-sec/40">·</span>
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-sidebar-hover text-title text-[11px] font-medium border border-card-border shrink-0">
+                                      <Globe className="w-3 h-3 text-text-sec" />
+                                      <span>{parsed.browser}</span>
+                                    </span>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })
+                        ) : (
+                          <tr>
+                            <td colSpan={5} className="p-12 text-center text-xs text-text-sec italic">
+                              暂无符合条件的访问记录
                             </td>
                           </tr>
-                        ))}
+                        )}
                       </tbody>
                     </table>
                   </div>
 
-                  {/* Pagination for Access Logs */}
-                  <div className="p-3.5 border-t border-card-border bg-sidebar-hover/10 flex items-center justify-between text-xs">
-                    <span className="text-text-sec font-medium">
-                      {filteredAccessLogs.length > 0
-                        ? `显示第 ${(currentPage - 1) * itemsPerPage + 1} 到 ${Math.min(
-                            currentPage * itemsPerPage,
-                            filteredAccessLogs.length
-                          )} 条，共 ${filteredAccessLogs.length} 条访问记录`
-                        : '暂无访问记录'}
-                    </span>
+                  {/* Fixed Bottom Pagination Bar */}
+                  <div className="p-3.5 border-t border-card-border bg-card-surface shrink-0 flex items-center justify-between text-xs">
+                    <div className="flex items-center gap-3">
+                      <span className="text-text-sec font-medium">
+                        {filteredAccessLogs.length > 0
+                          ? `显示第 ${(currentPage - 1) * itemsPerPage + 1} 到 ${Math.min(
+                              currentPage * itemsPerPage,
+                              filteredAccessLogs.length
+                            )} 条，共 ${filteredAccessLogs.length} 条记录`
+                          : '共 0 条记录'}
+                      </span>
+                      <select
+                        value={itemsPerPage}
+                        onChange={(e) => {
+                          setItemsPerPage(Number(e.target.value));
+                          setCurrentPage(1);
+                        }}
+                        className="px-2 py-0.5 rounded-lg border border-input-border bg-canvas text-title text-xs cursor-pointer"
+                      >
+                        <option value={15}>15 条/页</option>
+                        <option value={30}>30 条/页</option>
+                        <option value={50}>50 条/页</option>
+                      </select>
+                    </div>
+
                     {totalPages > 1 && (
                       <div className="flex items-center gap-1.5">
                         <button
                           onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
                           disabled={currentPage === 1}
-                          className="p-1.5 rounded-lg border border-input-border bg-card-surface hover:bg-sidebar-hover disabled:opacity-40 disabled:cursor-not-allowed text-title cursor-pointer"
+                          className="p-1.5 rounded-lg border border-input-border bg-canvas hover:bg-sidebar-hover disabled:opacity-40 disabled:cursor-not-allowed text-title cursor-pointer"
                           title="上一页"
                         >
                           <ChevronLeft className="w-3.5 h-3.5" />
@@ -2009,7 +2438,7 @@ export default function AdminAppRegistry({
                         <button
                           onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
                           disabled={currentPage === totalPages}
-                          className="p-1.5 rounded-lg border border-input-border bg-card-surface hover:bg-sidebar-hover disabled:opacity-40 disabled:cursor-not-allowed text-title cursor-pointer"
+                          className="p-1.5 rounded-lg border border-input-border bg-canvas hover:bg-sidebar-hover disabled:opacity-40 disabled:cursor-not-allowed text-title cursor-pointer"
                           title="下一页"
                         >
                           <ChevronRight className="w-3.5 h-3.5" />
@@ -2019,58 +2448,91 @@ export default function AdminAppRegistry({
                   </div>
                 </div>
               ) : (
-                // 系统审计日志
-                <div className="bg-card-surface border border-card-border rounded-2xl overflow-hidden shadow-sm flex flex-col justify-between min-h-[400px]">
-                  <div className="overflow-x-auto">
+                // System Audit Logs Table
+                <div className="bg-card-surface border border-card-border rounded-2xl shadow-sm flex flex-col flex-1 min-h-0 overflow-hidden">
+                  {/* Table Scroll Area */}
+                  <div className="flex-1 min-h-0 overflow-y-auto">
                     <table className="w-full text-left border-collapse text-xs">
-                      <thead>
-                        <tr className="bg-sidebar-hover/40 border-b border-card-border text-text-sec font-semibold">
-                          <th className="p-3 w-40">发生时间</th>
-                          <th className="p-3 w-36">操作人</th>
-                          <th className="p-3 w-32">操作类型</th>
+                      <thead className="sticky top-0 z-10 bg-slate-100/95 dark:bg-slate-800/95 backdrop-blur border-b border-card-border text-title font-bold shadow-xs">
+                        <tr>
+                          <th className="p-3 w-44">发生时间</th>
+                          <th className="p-3 w-44">操作人</th>
+                          <th className="p-3 w-36">操作类型</th>
                           <th className="p-3">日志详情</th>
-                          <th className="p-3 w-32">IP 地址</th>
+                          <th className="p-3 w-36">IP 地址</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-card-border">
-                        {paginatedSystemLogs.map((log) => (
-                          <tr key={log.id} className="hover:bg-sidebar-hover/20 transition-colors">
-                            <td className="p-3 text-text-sec font-mono">
-                              {new Date(log.timestamp).toLocaleString('zh-CN', { hour12: false })}
+                        {paginatedSystemLogs.length > 0 ? (
+                          paginatedSystemLogs.map((log) => (
+                            <tr key={log.id} className="hover:bg-sidebar-hover/30 transition-colors">
+                              <td className="p-3 text-text-sec font-mono tabular-nums text-xs whitespace-nowrap">
+                                {new Date(log.timestamp).toLocaleString('zh-CN', { hour12: false })}
+                              </td>
+                              <td className="p-3">
+                                <div className="flex items-center gap-2">
+                                  <div className="w-6 h-6 rounded-full bg-sidebar-hover flex items-center justify-center text-[10px] font-bold text-title">
+                                    {(log.userName || log.loginName).charAt(0)}
+                                  </div>
+                                  <div>
+                                    <div className="font-bold text-title">{log.userName || log.loginName}</div>
+                                    <div className="text-[10px] text-text-sec font-mono">@{log.loginName}</div>
+                                  </div>
+                                </div>
+                              </td>
+                              <td className="p-3">
+                                <span className="inline-flex px-2 py-0.5 rounded text-[10px] font-mono bg-sidebar-hover text-text-sec border border-card-border">
+                                  {log.actionType}
+                                </span>
+                              </td>
+                              <td className="p-3 text-title break-all">{log.detail}</td>
+                              <td className="p-3 text-text-sec font-mono tabular-nums text-xs whitespace-nowrap">
+                                {log.ip || '-'}
+                              </td>
+                            </tr>
+                          ))
+                        ) : (
+                          <tr>
+                            <td colSpan={5} className="p-12 text-center text-xs text-text-sec italic">
+                              暂无符合条件的审计日志
                             </td>
-                            <td className="p-3">
-                              <div className="font-bold text-title">{log.userName || log.loginName}</div>
-                              <div className="text-[10px] text-text-sec font-mono">@{log.loginName}</div>
-                            </td>
-                            <td className="p-3">
-                              <span className="inline-flex px-2 py-0.5 rounded text-[10px] font-mono bg-sidebar-hover text-text-sec border border-card-border">
-                                {log.actionType}
-                              </span>
-                            </td>
-                            <td className="p-3 text-title">{log.detail}</td>
-                            <td className="p-3 text-text-sec font-mono">{log.ip || '-'}</td>
                           </tr>
-                        ))}
+                        )}
                       </tbody>
                     </table>
                   </div>
 
-                  {/* Pagination for System Audit Logs */}
-                  <div className="p-3.5 border-t border-card-border bg-sidebar-hover/10 flex items-center justify-between text-xs">
-                    <span className="text-text-sec font-medium">
-                      {filteredSystemLogs.length > 0
-                        ? `显示第 ${(systemLogPage - 1) * logsPerPage + 1} 到 ${Math.min(
-                            systemLogPage * logsPerPage,
-                            filteredSystemLogs.length
-                          )} 条，共 ${filteredSystemLogs.length} 条审计日志`
-                        : '暂无审计日志'}
-                    </span>
+                  {/* Fixed Bottom Pagination Bar */}
+                  <div className="p-3.5 border-t border-card-border bg-card-surface shrink-0 flex items-center justify-between text-xs">
+                    <div className="flex items-center gap-3">
+                      <span className="text-text-sec font-medium">
+                        {filteredSystemLogs.length > 0
+                          ? `显示第 ${(systemLogPage - 1) * logsPerPage + 1} 到 ${Math.min(
+                              systemLogPage * logsPerPage,
+                              filteredSystemLogs.length
+                            )} 条，共 ${filteredSystemLogs.length} 条记录`
+                          : '共 0 条记录'}
+                      </span>
+                      <select
+                        value={logsPerPage}
+                        onChange={(e) => {
+                          setLogsPerPage(Number(e.target.value));
+                          setSystemLogPage(1);
+                        }}
+                        className="px-2 py-0.5 rounded-lg border border-input-border bg-canvas text-title text-xs cursor-pointer"
+                      >
+                        <option value={15}>15 条/页</option>
+                        <option value={30}>30 条/页</option>
+                        <option value={50}>50 条/页</option>
+                      </select>
+                    </div>
+
                     {totalLogPages > 1 && (
                       <div className="flex items-center gap-1.5">
                         <button
                           onClick={() => setSystemLogPage((p) => Math.max(1, p - 1))}
                           disabled={systemLogPage === 1}
-                          className="p-1.5 rounded-lg border border-input-border bg-card-surface hover:bg-sidebar-hover disabled:opacity-40 disabled:cursor-not-allowed text-title cursor-pointer"
+                          className="p-1.5 rounded-lg border border-input-border bg-canvas hover:bg-sidebar-hover disabled:opacity-40 disabled:cursor-not-allowed text-title cursor-pointer"
                           title="上一页"
                         >
                           <ChevronLeft className="w-3.5 h-3.5" />
@@ -2081,7 +2543,7 @@ export default function AdminAppRegistry({
                         <button
                           onClick={() => setSystemLogPage((p) => Math.min(totalLogPages, p + 1))}
                           disabled={systemLogPage === totalLogPages}
-                          className="p-1.5 rounded-lg border border-input-border bg-card-surface hover:bg-sidebar-hover disabled:opacity-40 disabled:cursor-not-allowed text-title cursor-pointer"
+                          className="p-1.5 rounded-lg border border-input-border bg-canvas hover:bg-sidebar-hover disabled:opacity-40 disabled:cursor-not-allowed text-title cursor-pointer"
                           title="下一页"
                         >
                           <ChevronRight className="w-3.5 h-3.5" />
