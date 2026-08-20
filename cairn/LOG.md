@@ -2,6 +2,15 @@
 
 This file records substantive progress in reverse-chronological order — newest entry at the top, right below this line. Keep each entry short — summary and pointer only; conclusions settle into `cairn/<topic>.md`.
 
+## 2026-08-21 · 应用卡片副标题扩展、慢速柔和呼吸绿点、部门标签内嵌与精炼底部
+- **慢速柔和呼吸绿点**：在 `globals.css` 中引入 `@keyframes softBreath`（3.5s 柔和周期，微发光平滑渐变，无频闪），完全替代原先的快速脉冲/扩散效果。
+- **部门标签紧随 Logo**：顶部左侧统一采用 `[ 44x44px 渐变图标 ]` + `[ 部门描边胶囊标签 ]` 并排布局，横向紧凑，释放卡片纵向空间。
+- **扩展副标题（Subtitle）属性**：
+  - 数据模型与 API：在 `App` 数据模型中增加 `subtitle String?` 字段，同步更新 `db push` 与管理后台创建/编辑表单。
+  - 卡片呈现：副标题紧跟在主标题下方以高亮亮橘色（`text-zpje-accent`）呈现场景定位或英文简称。
+- **底部空间精净化**：移除非维护状态下的“数字化系统”占位文本，右对齐加粗“访问 →”，纵向空间更开阔聚焦。
+- 代码推送到 GitHub，自动化部署生产服务器并完成 MySQL schema 同步（`prisma db push`）、Next.js 重新打包与 PM2 重启。
+
 ## 2026-08-20 · 前台应用卡片现代轻量极简重构与角落弥散径向渐变（Radial Ambient Glow）
 - **角落弥散径向渐变（Radial Ambient Glow）**：卡片主体保持纯净底色（亮/暗模式自适应），右上角（`circle at 100% 0%`）隐约透出系统专属主题色光晕（默认 7%~12%），Hover 状态平滑增强（14%~24%）并产生对应主题色的环境漫反射投影（`0 12px 24px -6px rgba(theme-rgb, 0.2)`）。
 - **顶部排版升级**：
