@@ -1,0 +1,13 @@
+version: 0.1
+project:
+  name: "Omni"
+  summary: "建安万维企业统一门户系统 (Next.js 16 + Prisma MySQL + Seeyon OA SSO)"
+cairn:
+  knowledge_dir: "cairn"
+  skill_spec_date: "2026-08-07"
+  git_policy: "track"
+  language: "zh"
+graduation:
+  provider: none
+history:
+  migration_mode: "start_fresh"
