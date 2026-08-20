@@ -136,6 +136,14 @@ const getRgba = (hex: string, alpha: number) => {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 };
 
+const getHexRgb = (hex: string): string => {
+  const cleanHex = hex.startsWith('#') ? hex : '#64748B';
+  const r = parseInt(cleanHex.slice(1, 3), 16) || 100;
+  const g = parseInt(cleanHex.slice(3, 5), 16) || 116;
+  const b = parseInt(cleanHex.slice(5, 7), 16) || 139;
+  return `${r}, ${g}, ${b}`;
+};
+
 const DEFAULT_ICON = LayoutDashboard;
 
 function DashboardWidget({ widget }: { widget: WidgetConfig }) {
@@ -518,6 +526,7 @@ export default function Dashboard({ userId, initialApps, departments, isAdmin, u
     const isOffline = app.status === 'offline';
     const isFav = favoriteIds.includes(app.id);
     const hexColor = getAppHexColor(app.color, app.key);
+    const rgbColor = getHexRgb(hexColor);
     const isHovered = hoveredAppId === `${app.id}-${isFavoriteSection ? 'fav' : 'main'}`;
 
     return (
@@ -536,78 +545,118 @@ export default function Dashboard({ userId, initialApps, departments, isAdmin, u
         }}
         onMouseEnter={() => setHoveredAppId(`${app.id}-${isFavoriteSection ? 'fav' : 'main'}`)}
         onMouseLeave={() => setHoveredAppId(null)}
-        className={`group relative flex flex-col justify-between p-4 rounded-xl bg-card-surface border border-card-border transition-all duration-300 hover:-translate-y-0.5 ${isMaintenanceMode ? 'opacity-40 select-none' : ''
-          } ${isOffline ? 'opacity-50' : ''}`}
+        className={`group relative flex flex-col justify-between p-4.5 rounded-2xl border transition-all duration-300 ${
+          isHovered ? '-translate-y-1' : ''
+        } ${isMaintenanceMode ? 'opacity-40 select-none' : ''} ${isOffline ? 'opacity-50' : ''}`}
         style={{
-          borderColor: isHovered ? getRgba(hexColor, 0.4) : undefined,
-          boxShadow: isHovered ? `0 4px 12px ${getRgba(hexColor, 0.15)}` : undefined,
+          background: isHovered
+            ? `radial-gradient(circle at 100% 0%, rgba(${rgbColor}, ${theme === 'dark' ? '0.24' : '0.14'}) 0%, transparent 70%), var(--card-bg)`
+            : `radial-gradient(circle at 100% 0%, rgba(${rgbColor}, ${theme === 'dark' ? '0.12' : '0.07'}) 0%, transparent 60%), var(--card-bg)`,
+          borderColor: isHovered
+            ? `rgba(${rgbColor}, 0.45)`
+            : `rgba(${rgbColor}, 0.16)`,
+          boxShadow: isHovered
+            ? `0 12px 24px -6px rgba(${rgbColor}, 0.2), 0 4px 6px -2px rgba(0, 0, 0, 0.02)`
+            : '0 1px 3px rgba(0, 0, 0, 0.04)',
         }}
       >
         <div>
-          {/* Icon & Status & Favorite Button */}
+          {/* Top Row: 44x44px Duotone Icon + Right Controls (Status & Favorite) */}
           <div className="flex items-center justify-between mb-3">
-            <div 
-              className="p-2 rounded-lg group-hover:scale-105 transition-transform flex items-center justify-center w-9 h-9"
+            {/* 44x44px Duotone Icon */}
+            <div
+              className="w-11 h-11 rounded-xl flex items-center justify-center transition-transform duration-300 group-hover:scale-105 shadow-xs shrink-0"
               style={{
-                backgroundColor: getRgba(hexColor, theme === 'dark' ? 0.2 : 0.1),
-                color: hexColor
+                background: `linear-gradient(135deg, rgba(${rgbColor}, ${theme === 'dark' ? '0.25' : '0.14'}), rgba(${rgbColor}, ${theme === 'dark' ? '0.10' : '0.05'}))`,
+                color: hexColor,
+                border: `1px solid rgba(${rgbColor}, 0.2)`
               }}
             >
               <IconComponent className="w-5 h-5" />
             </div>
 
+            {/* Right Status Indicator & Favorite ⭐ */}
             <div className="flex items-center gap-2">
-              {/* Status Badge */}
-              <div className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-sidebar-hover text-xs text-text-sec">
-                <span className={`w-1.5 h-1.5 rounded-full ${app.status === 'active' ? 'bg-emerald-500 animate-pulse' :
-                  app.status === 'maintenance' ? 'bg-amber-500' : 'bg-red-500'
-                  }`} />
-                <span>
-                  {app.status === 'active' ? '运行中' :
-                    app.status === 'maintenance' ? '维护中' : '已离线'}
-                </span>
-              </div>
+              {/* Minimal Status Indicator */}
+              {app.status === 'active' ? (
+                <div className="relative flex items-center justify-center p-1" title="服务运行正常">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 shadow-emerald-500/50 animate-pulse" />
+                  <span className="absolute inline-flex h-full w-full rounded-full opacity-60 animate-ping bg-emerald-500 scale-75" />
+                </div>
+              ) : (
+                <div
+                  className={`px-2 py-0.5 rounded-full text-[10px] font-bold border flex items-center gap-1 ${
+                    app.status === 'maintenance'
+                      ? 'bg-amber-500/10 text-amber-600 border-amber-500/20'
+                      : 'bg-red-500/10 text-red-500 border-red-500/20'
+                  }`}
+                >
+                  <span className={`w-1.5 h-1.5 rounded-full ${app.status === 'maintenance' ? 'bg-amber-500' : 'bg-red-500'}`} />
+                  <span>{app.status === 'maintenance' ? '维护中' : '已离线'}</span>
+                </div>
+              )}
 
               {/* Favorite Star Button */}
               <button
                 onClick={(e) => toggleFavorite(e, app.id)}
-                className={`p-1.5 rounded-lg border transition-all duration-200 ${isFav
-                  ? 'bg-zpje-accent/10 border-zpje-accent/20 text-zpje-accent'
-                  : 'bg-sidebar-hover border-transparent text-text-sec hover:text-zpje-accent hover:bg-zpje-accent/5'
-                  }`}
+                className={`p-1 rounded-lg transition-all duration-200 cursor-pointer ${
+                  isFav
+                    ? 'text-amber-500 hover:scale-110'
+                    : 'text-text-sec/40 hover:text-amber-500 hover:scale-110'
+                }`}
                 title={isFav ? '取消收藏' : '收藏应用'}
               >
-                <Star className={`w-3.5 h-3.5 ${isFav ? 'fill-zpje-accent' : ''}`} />
+                <Star
+                  className={`w-4 h-4 transition-transform ${
+                    isFav ? 'fill-amber-500 text-amber-500 scale-105' : ''
+                  }`}
+                />
               </button>
             </div>
           </div>
 
-          {/* Info */}
-          <h3 className="text-base font-bold text-title group-hover:text-zpje-brand transition-colors flex flex-wrap items-center gap-1 break-all">
-            {app.name}
-          </h3>
-          <div className="text-xs text-text-sec font-bold tracking-wider uppercase mt-0.5">
-            {app.tag}
+          {/* Middle: Department Tag + Main Title + Description */}
+          <div className="flex flex-col">
+            {/* Department Tag (轻量描边胶囊标签) */}
+            {app.tag && (
+              <div className="mb-1.5">
+                <span className="inline-block px-2 py-0.5 rounded-md text-[11px] font-medium bg-sidebar-hover text-text-sec border border-card-border/80">
+                  {app.tag}
+                </span>
+              </div>
+            )}
+
+            {/* App Main Title */}
+            <h3 className="text-base font-bold text-title group-hover:text-zpje-brand dark:group-hover:text-zpje-accent transition-colors line-clamp-2 leading-snug break-words">
+              {app.name}
+            </h3>
+
+            {/* App Description */}
+            <p className="mt-1.5 text-xs text-text-sec leading-relaxed line-clamp-2 break-words">
+              {app.description || '暂无应用说明'}
+            </p>
           </div>
-          <p className="mt-2 text-sm text-text-sec leading-relaxed break-words">
-            {app.description}
-          </p>
         </div>
 
-        {/* Footer Trigger */}
-        <div className="mt-3 pt-2.5 border-t border-card-border flex items-center justify-between text-sm font-semibold">
-          <span className="text-text-sec group-hover:text-title transition-colors">
-            {isMaintenanceMode ? '系统维护中' : (isOffline ? '服务已离线' : '进入系统')}
+        {/* Bottom Footer: "访问 →" or Maintenance notice */}
+        <div className="mt-4 pt-2.5 border-t border-card-border/60 flex items-center justify-between text-xs font-semibold">
+          <span className="text-text-sec font-medium">
+            {isMaintenanceMode ? '系统维护中' : (isOffline ? '服务已离线' : '数字化系统')}
           </span>
+
           {!isMaintenanceMode && !isOffline && (
-            <div className="flex items-center gap-1 text-zpje-brand group-hover:opacity-80 transition-colors">
+            <div
+              className="flex items-center gap-1 font-bold transition-all duration-200 group-hover:translate-x-0.5"
+              style={{ color: hexColor }}
+            >
               <span>访问</span>
               <ArrowRight className="w-3.5 h-3.5 transform group-hover:translate-x-0.5 transition-transform" />
             </div>
           )}
+
           {isAdmin && (isMaintenanceMode || isOffline) && (
-            <span className="text-xs text-zpje-brand font-medium">
-              点击管理配置
+            <span className="text-[11px] text-zpje-accent font-medium hover:underline">
+              管理配置
             </span>
           )}
         </div>
