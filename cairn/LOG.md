@@ -2,6 +2,12 @@
 
 This file records substantive progress in reverse-chronological order — newest entry at the top, right below this line. Keep each entry short — summary and pointer only; conclusions settle into `cairn/<topic>.md`.
 
+## 2026-08-20 · 管理后台侧边栏固定、入口迁移与统计翻页控件恢复
+- 优化管理后台布局为 `h-screen overflow-hidden`，侧边栏高度独立固定不随工作区滚动。
+- “返回门户前台”入口迁移至页面顶部右上角明暗切换按钮左侧。
+- 完整恢复“访问与审计统计”标签页下子系统访问统计（时间跨度与翻页）和系统审计日志（关键词搜索、操作类型下拉与翻页）的筛选与分页控件。
+- 自动化部署并同步至生产服务器，构建并通过验证（PM2 online）。
+
 ## 2026-08-20 · 生产服务器部署完成
 - 代码同步并推送到 GitHub 远程仓库 `ShiroMaple/ZPJE_Omni`。
 - 生产服务器（192.168.103.191）完成代码同步、Prisma 客户端重新生成、角色表迁移与预置数据同步、生产环境打包构建（`pnpm build`）与 PM2 服务平滑重启（`pm2 restart Omni`）。
