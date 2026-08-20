@@ -2,6 +2,17 @@
 
 This file records substantive progress in reverse-chronological order — newest entry at the top, right below this line. Keep each entry short — summary and pointer only; conclusions settle into `cairn/<topic>.md`.
 
+## 2026-08-20 · 管理后台深海蓝风格统一、Header 四段式重构与审计表格全高自适应
+- **侧边栏统一深海蓝**：管理后台全面采用前台深蓝底色（`bg-zpje-brand` / `#004085`），统一企业 Logo（`建安万维` + `Omni 管理后台`），底部常驻“系统运行正常”呼吸灯与收起侧边栏控制器。
+- **Header 四段式布局**：标准化为 `[返回门户前台] -> [明暗切换] -> [绿点+姓名+Popover] -> [退出登录]`。
+- **审计表格全高视口自适应与底部分页置底固定**：卡片采用 `flex-1 min-h-0 overflow-hidden`，表头 Sticky 置顶，仅 `tbody` 内部滚动，底部分页栏与每页条数下拉在任何缩放（100%/80%）及分辨率下始终可见。
+- **数据呈现与审计功能大升级**：
+  - User-Agent 智能语义化解析（OS 图标标签 + 浏览器图标标签，悬浮查看原始完整 UA）。
+  - 访客身份分级（`guest` 浅灰弱化胶囊，正式员工彩色头像微标，并支持“全部/仅员工/仅访客”快速过滤）。
+  - 访问时间与 IP 等宽字体（`font-mono tabular-nums`）对齐。
+  - 顶部集成综合 Toolbar：支持关键词搜索、目标应用下拉筛选、时间跨度快捷切换、一键导出 UTF-8 BOM CSV 与即时刷新。
+- 代码已推送到 GitHub 并自动部署至生产服务器，构建成功且 PM2 正常在线。
+
 ## 2026-08-20 · 管理后台侧边栏固定、入口迁移与统计翻页控件恢复
 - 优化管理后台布局为 `h-screen overflow-hidden`，侧边栏高度独立固定不随工作区滚动。
 - “返回门户前台”入口迁移至页面顶部右上角明暗切换按钮左侧。
