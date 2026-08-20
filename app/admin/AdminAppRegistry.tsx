@@ -1065,12 +1065,12 @@ export default function AdminAppRegistry({
   const totalLogPages = Math.ceil(filteredSystemLogs.length / logsPerPage) || 1;
 
   return (
-    <div className="min-h-screen bg-canvas text-text-main flex flex-col md:flex-row antialiased font-sans">
+    <div className="h-screen overflow-hidden bg-canvas text-text-main flex flex-col md:flex-row antialiased font-sans">
       {/* Sidebar Navigation */}
       <div
         className={`${
           isSidebarCollapsed ? 'w-20' : 'w-64'
-        } shrink-0 bg-sidebar border-r border-card-border p-4 flex flex-col justify-between transition-all duration-300 z-30 shadow-md`}
+        } h-full shrink-0 bg-sidebar border-r border-card-border p-4 flex flex-col justify-between transition-all duration-300 z-30 shadow-md overflow-y-auto`}
       >
         <div className="flex flex-col gap-6">
           {/* Brand Header */}
@@ -1154,16 +1154,6 @@ export default function AdminAppRegistry({
 
         {/* Sidebar Footer Controls */}
         <div className="flex flex-col gap-2 pt-4 border-t border-card-border">
-          <a
-            href="/"
-            className={`flex items-center gap-3 px-3 py-2 text-xs font-semibold rounded-lg text-text-sec hover:text-title hover:bg-sidebar-hover transition-colors ${
-              isSidebarCollapsed ? 'justify-center' : ''
-            }`}
-          >
-            <Home className="w-4 h-4 shrink-0" />
-            {!isSidebarCollapsed && <span>返回门户前台</span>}
-          </a>
-
           <button
             onClick={toggleSidebarCollapse}
             className={`flex items-center gap-3 px-3 py-2 text-xs font-semibold rounded-lg text-text-sec hover:text-title hover:bg-sidebar-hover transition-colors cursor-pointer ${
@@ -1183,7 +1173,7 @@ export default function AdminAppRegistry({
       </div>
 
       {/* Main Content Area */}
-      <div className="flex-1 flex flex-col min-w-0 bg-canvas overflow-y-auto">
+      <div className="flex-1 flex flex-col min-w-0 h-full overflow-y-auto bg-canvas">
         {/* Top Header */}
         <header className="sticky top-0 z-20 h-16 bg-card-surface/80 backdrop-blur-md border-b border-card-border px-6 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -1196,6 +1186,16 @@ export default function AdminAppRegistry({
           </div>
 
           <div className="flex items-center gap-3">
+            {/* Return to Portal Frontpage */}
+            <a
+              href="/"
+              className="flex items-center gap-2 px-3 py-1.5 rounded-xl border border-card-border bg-card-surface hover:bg-sidebar-hover text-text-sec hover:text-title text-xs font-semibold transition-colors shadow-xs"
+              title="返回门户前台"
+            >
+              <Home className="w-4 h-4 text-zpje-accent" />
+              <span className="hidden sm:inline">返回门户前台</span>
+            </a>
+
             {/* Theme Switcher */}
             {mounted && (
               <button
@@ -1885,6 +1885,67 @@ export default function AdminAppRegistry({
                     系统审计日志
                   </button>
                 </div>
+
+                {/* Sub-tab Filters */}
+                {statsSubTab === 'access' ? (
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-text-sec font-semibold">时间跨度:</span>
+                    <div className="flex items-center rounded-xl bg-card-surface border border-card-border p-1">
+                      {(['all', '24h', '7d', '30d'] as const).map((filter) => (
+                        <button
+                          key={filter}
+                          onClick={() => {
+                            setTimeFilter(filter);
+                            setCurrentPage(1);
+                          }}
+                          className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
+                            timeFilter === filter
+                              ? 'bg-zpje-accent text-white shadow-xs'
+                              : 'text-text-sec hover:text-title'
+                          }`}
+                        >
+                          {filter === 'all' && '全部'}
+                          {filter === '24h' && '24小时'}
+                          {filter === '7d' && '7天'}
+                          {filter === '30d' && '30天'}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex flex-wrap items-center gap-3">
+                    <div className="relative">
+                      <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-text-sec" />
+                      <input
+                        type="text"
+                        placeholder="搜索操作人、详情或IP..."
+                        value={systemLogSearch}
+                        onChange={(e) => {
+                          setSystemLogSearch(e.target.value);
+                          setSystemLogPage(1);
+                        }}
+                        className="pl-8 pr-3 py-1.5 rounded-xl bg-card-surface border border-input-border text-title text-xs focus:outline-none focus:ring-1 focus:ring-zpje-accent"
+                      />
+                    </div>
+                    <select
+                      value={logTypeFilter}
+                      onChange={(e) => {
+                        setLogTypeFilter(e.target.value);
+                        setSystemLogPage(1);
+                      }}
+                      className="px-3 py-1.5 rounded-xl bg-card-surface border border-input-border text-title text-xs font-medium focus:outline-none focus:ring-1 focus:ring-zpje-accent cursor-pointer"
+                    >
+                      <option value="all">全部操作类型</option>
+                      <option value="SSO_LOGIN">SSO_LOGIN (单点登录)</option>
+                      <option value="LOGOUT">LOGOUT (退出登录)</option>
+                      <option value="APP_ACCESS">APP_ACCESS (访问应用)</option>
+                      <option value="APP_MANAGE">APP_MANAGE (应用管理)</option>
+                      <option value="WIDGET_MANAGE">WIDGET_MANAGE (看板管理)</option>
+                      <option value="ADMIN_MANAGE">ADMIN_MANAGE (特权管理)</option>
+                      <option value="ROLE_MANAGE">ROLE_MANAGE (业务角色)</option>
+                    </select>
+                  </div>
+                )}
               </div>
 
               {statsSubTab === 'access' ? (
@@ -1920,6 +1981,41 @@ export default function AdminAppRegistry({
                         ))}
                       </tbody>
                     </table>
+                  </div>
+
+                  {/* Pagination for Access Logs */}
+                  <div className="p-3.5 border-t border-card-border bg-sidebar-hover/10 flex items-center justify-between text-xs">
+                    <span className="text-text-sec font-medium">
+                      {filteredAccessLogs.length > 0
+                        ? `显示第 ${(currentPage - 1) * itemsPerPage + 1} 到 ${Math.min(
+                            currentPage * itemsPerPage,
+                            filteredAccessLogs.length
+                          )} 条，共 ${filteredAccessLogs.length} 条访问记录`
+                        : '暂无访问记录'}
+                    </span>
+                    {totalPages > 1 && (
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                          disabled={currentPage === 1}
+                          className="p-1.5 rounded-lg border border-input-border bg-card-surface hover:bg-sidebar-hover disabled:opacity-40 disabled:cursor-not-allowed text-title cursor-pointer"
+                          title="上一页"
+                        >
+                          <ChevronLeft className="w-3.5 h-3.5" />
+                        </button>
+                        <span className="px-2 font-bold text-title font-mono">
+                          {currentPage} / {totalPages}
+                        </span>
+                        <button
+                          onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                          disabled={currentPage === totalPages}
+                          className="p-1.5 rounded-lg border border-input-border bg-card-surface hover:bg-sidebar-hover disabled:opacity-40 disabled:cursor-not-allowed text-title cursor-pointer"
+                          title="下一页"
+                        >
+                          <ChevronRight className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
               ) : (
@@ -1957,6 +2053,41 @@ export default function AdminAppRegistry({
                         ))}
                       </tbody>
                     </table>
+                  </div>
+
+                  {/* Pagination for System Audit Logs */}
+                  <div className="p-3.5 border-t border-card-border bg-sidebar-hover/10 flex items-center justify-between text-xs">
+                    <span className="text-text-sec font-medium">
+                      {filteredSystemLogs.length > 0
+                        ? `显示第 ${(systemLogPage - 1) * logsPerPage + 1} 到 ${Math.min(
+                            systemLogPage * logsPerPage,
+                            filteredSystemLogs.length
+                          )} 条，共 ${filteredSystemLogs.length} 条审计日志`
+                        : '暂无审计日志'}
+                    </span>
+                    {totalLogPages > 1 && (
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          onClick={() => setSystemLogPage((p) => Math.max(1, p - 1))}
+                          disabled={systemLogPage === 1}
+                          className="p-1.5 rounded-lg border border-input-border bg-card-surface hover:bg-sidebar-hover disabled:opacity-40 disabled:cursor-not-allowed text-title cursor-pointer"
+                          title="上一页"
+                        >
+                          <ChevronLeft className="w-3.5 h-3.5" />
+                        </button>
+                        <span className="px-2 font-bold text-title font-mono">
+                          {systemLogPage} / {totalLogPages}
+                        </span>
+                        <button
+                          onClick={() => setSystemLogPage((p) => Math.min(totalLogPages, p + 1))}
+                          disabled={systemLogPage === totalLogPages}
+                          className="p-1.5 rounded-lg border border-input-border bg-card-surface hover:bg-sidebar-hover disabled:opacity-40 disabled:cursor-not-allowed text-title cursor-pointer"
+                          title="下一页"
+                        >
+                          <ChevronRight className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
