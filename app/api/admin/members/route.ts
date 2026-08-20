@@ -63,28 +63,41 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ roles, assignedMembers });
     }
 
-    if (!search.trim()) {
+    const deptId = searchParams.get('deptId') || '';
+
+    if (!search.trim() && !deptId) {
       return NextResponse.json([]);
     }
 
+    const whereClause: any = {};
+
+    if (deptId) {
+      whereClause.orgDepartmentId = deptId;
+    }
+
+    if (search.trim()) {
+      whereClause.OR = [
+        { name: { contains: search.trim() } },
+        { loginName: { contains: search.trim() } },
+        { code: { contains: search.trim() } }
+      ];
+    }
+
     const members = await prisma.member.findMany({
-      where: {
-        OR: [
-          { name: { contains: search } },
-          { loginName: { contains: search } },
-          { code: { contains: search } }
-        ]
-      },
+      where: whereClause,
       include: {
-        department: { select: { name: true } },
-        unit: { select: { name: true } },
+        department: { select: { id: true, name: true } },
+        unit: { select: { id: true, name: true } },
         roles: {
           include: {
             role: true
           }
         }
       },
-      take: 30
+      orderBy: {
+        name: 'asc',
+      },
+      take: 100
     });
 
     return NextResponse.json(members);

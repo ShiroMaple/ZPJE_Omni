@@ -59,21 +59,32 @@ async function main() {
     }
     console.log('预置应用数据导入成功！');
 
-    console.log('开始写入预置角色数据...');
+    console.log('开始写入预置业务角色数据...');
     const roles = [
-        { key: 'admin', name: '系统管理员' },
-        { key: 'operator', name: '高级操作员' },
-        { key: 'user', name: '普通员工' },
-        { key: 'leader', name: '领导' }
+        {
+            key: 'leader',
+            name: '领导',
+            description: '公司领导/分管领导决策看板与跨部门核心应用权限',
+        },
+        {
+            key: 'operator',
+            name: '高级操作员',
+            description: '生产、运营等业务子系统核心操作与调度人员',
+        },
+        {
+            key: 'welder',
+            name: '管道质检组',
+            description: '现场管道焊接作业、探伤与施工质量数据填报人员',
+        },
     ];
     for (const role of roles) {
         await prisma.role.upsert({
             where: { key: role.key },
-            update: { name: role.name },
+            update: { name: role.name, description: role.description },
             create: role,
         });
     }
-    console.log('预置角色数据导入成功！');
+    console.log('预置业务角色数据导入成功！');
 }
 
 main()

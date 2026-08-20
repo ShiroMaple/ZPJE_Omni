@@ -136,8 +136,9 @@ model AccessLog {
 // 角色模型
 model Role {
   id          String   @id @default(cuid())
-  key         String   @unique // 例如 "admin", "operator", "user"
-  name        String   // 例如 "系统管理员", "操作员", "普通员工"
+  key         String   @unique // 例如 "leader", "operator", "welder"
+  name        String   // 例如 "领导", "高级操作员", "管道质检组"
+  description String?  @db.Text // 角色业务职能与权限说明
   members     MemberRole[]
   permissions AppRolePermission[]
 

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import {
   Plus,
   Edit,
@@ -24,6 +24,7 @@ import {
   Layers,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
   Eye,
   EyeOff,
   Shield,
@@ -31,7 +32,17 @@ import {
   User,
   Moon,
   Sun,
-  LogOut
+  LogOut,
+  Folder,
+  FolderOpen,
+  UserPlus,
+  UserMinus,
+  CheckSquare,
+  Square,
+  MinusSquare,
+  Filter,
+  Sparkles,
+  Info
 } from 'lucide-react';
 
 interface DBApp {
@@ -54,15 +65,22 @@ interface DBApp {
   deptIds?: string[];
 }
 
-interface DeptOption {
+export interface DepartmentTreeNode {
   id: string;
   name: string;
+  code: string | null;
+  parentId: string | null;
+  orgAccountId: string;
+  unitName?: string;
+  memberCount?: number;
+  children: DepartmentTreeNode[];
 }
 
-interface UnitOption {
+export interface UnitTreeNode {
   id: string;
   name: string;
-  departments: DeptOption[];
+  code: string | null;
+  departments: DepartmentTreeNode[];
 }
 
 interface AccessLog {
@@ -83,6 +101,8 @@ interface RoleOption {
   id: string;
   key: string;
   name: string;
+  description: string | null;
+  memberCount?: number;
 }
 
 interface WidgetConfig {
@@ -109,39 +129,37 @@ interface SystemLog {
   id: string;
   loginName: string;
   userName: string;
-  actionType: string; // 'SSO_LOGIN' | 'LOGOUT' | 'APP_ACCESS' | 'APP_MANAGE' | 'WIDGET_MANAGE' | 'ADMIN_MANAGE'
+  actionType: string;
   detail: string;
   ip: string | null;
   userAgent: string | null;
   timestamp: string;
 }
 
-interface RoleAssignedMember {
+interface RoleMemberItem {
   id: string;
   name: string;
   loginName: string;
-  deptName: string;
+  code?: string;
+  adminType: string;
   unitName: string;
-  roles: Array<{
-    id: string;
-    key: string;
-    name: string;
-  }>;
+  deptName: string;
+  joinedAt?: string;
 }
 
 interface AdminAppRegistryProps {
   initialApps: DBApp[];
-  departmentsTree: UnitOption[];
+  departmentsTree: UnitTreeNode[];
   accessLogs: AccessLog[];
   roles: RoleOption[];
   initialWidgets: WidgetConfig[];
   isSystemAdmin: boolean;
   isOpsAdmin?: boolean;
   initialAdminMembers: AdminMember[];
-  initialRoleAssignedMembers?: RoleAssignedMember[];
+  initialRoleAssignedMembers?: any[];
   initialSystemLogs: SystemLog[];
   userId: string;
-  userInfo: { name: string; loginName: string; unitName: string; deptName: string; } | null;
+  userInfo: { name: string; loginName: string; unitName: string; deptName: string } | null;
   isAdmin: boolean;
 }
 
@@ -176,7 +194,7 @@ const LEGACY_COLOR_HEX: Record<string, string> = {
   FabFlow: '#3B82F6',
   supos_Kanban: '#F59E0B',
   DocEx: '#8B5CF6',
-  WeldSnap: '#06B6D4',
+  WeldSnap: '#06B6D4'
 };
 
 const getAppHexColor = (color: string | null | undefined, key: string): string => {
@@ -192,31 +210,48 @@ const getRgba = (hex: string, alpha: number) => {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 };
 
-const getRoleBadgeStyle = (roleKey: string) => {
+const getRoleIconAndBadge = (roleKey: string) => {
   switch (roleKey) {
-    case 'admin':
-      return 'bg-red-500/10 text-red-500 border-red-500/30';
     case 'leader':
-      return 'bg-amber-500/10 text-amber-500 border-amber-500/30';
+      return { icon: '🌟', badge: 'bg-amber-500/10 text-amber-600 border-amber-500/30 dark:text-amber-400' };
     case 'operator':
-      return 'bg-blue-500/10 text-blue-500 border-blue-500/30';
-    case 'user':
-      return 'bg-emerald-500/10 text-emerald-500 border-emerald-500/30';
+      return { icon: '⚙️', badge: 'bg-blue-500/10 text-blue-600 border-blue-500/30 dark:text-blue-400' };
+    case 'welder':
+      return { icon: '🔧', badge: 'bg-cyan-500/10 text-cyan-600 border-cyan-500/30 dark:text-cyan-400' };
     default:
-      return 'bg-purple-500/10 text-purple-500 border-purple-500/30';
+      return { icon: '🏷️', badge: 'bg-purple-500/10 text-purple-600 border-purple-500/30 dark:text-purple-400' };
   }
 };
+
+// 收集当前树节点及其所有子节点的 ID 列表（用于级联勾选）
+function getAllDescendantDeptIds(node: DepartmentTreeNode): string[] {
+  const ids = [node.id];
+  if (node.children && node.children.length > 0) {
+    for (const child of node.children) {
+      ids.push(...getAllDescendantDeptIds(child));
+    }
+  }
+  return ids;
+}
+
+// 收集某个单位下所有部门的 ID 列表
+function getAllDeptIdsInUnit(unit: UnitTreeNode): string[] {
+  const ids: string[] = [];
+  for (const dept of unit.departments) {
+    ids.push(...getAllDescendantDeptIds(dept));
+  }
+  return ids;
+}
 
 export default function AdminAppRegistry({
   initialApps,
   departmentsTree,
   accessLogs,
-  roles,
+  roles: initialRoles,
   initialWidgets,
   isSystemAdmin,
   isOpsAdmin,
   initialAdminMembers,
-  initialRoleAssignedMembers,
   initialSystemLogs,
   userId,
   userInfo,
@@ -225,19 +260,32 @@ export default function AdminAppRegistry({
   const [apps, setApps] = useState<DBApp[]>(initialApps);
   const [widgets, setWidgets] = useState<WidgetConfig[]>(initialWidgets);
   const [adminMembers, setAdminMembers] = useState<AdminMember[]>(initialAdminMembers);
-  const [roleAssignedMembers, setRoleAssignedMembers] = useState<RoleAssignedMember[]>(initialRoleAssignedMembers || []);
   const [systemLogs, setSystemLogs] = useState<SystemLog[]>(initialSystemLogs);
-  
-  // Tab 3 Sub-tabs: 'roles' (业务角色分配) | 'admins' (管理员特权分配)
-  const [permissionSubTab, setPermissionSubTab] = useState<'roles' | 'admins'>('roles');
-  const [roleFilter, setRoleFilter] = useState<string>('all');
+
+  // 业务角色列表状态
+  const [rolesList, setRolesList] = useState<RoleOption[]>(initialRoles);
+  const [activeRoleId, setActiveRoleId] = useState<string>(initialRoles[0]?.id || '');
   const [roleSearchTerm, setRoleSearchTerm] = useState<string>('');
 
-  // Role Member Search State
-  const [roleMemberSearch, setRoleMemberSearch] = useState('');
-  const [roleMemberSearchResults, setRoleMemberSearchResults] = useState<any[]>([]);
-  const [roleMemberSearchLoading, setRoleMemberSearchLoading] = useState(false);
-  const roleSearchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  // 选定角色的成员列表状态
+  const [selectedRoleMembers, setSelectedRoleMembers] = useState<RoleMemberItem[]>([]);
+  const [roleMembersLoading, setRoleMembersLoading] = useState(false);
+  const [roleMemberKeyword, setRoleMemberKeyword] = useState('');
+  const [roleMembersPage, setRoleMembersPage] = useState(1);
+  const roleMembersPerPage = 12;
+
+  // 穿梭框/批量添加成员弹窗
+  const [isAddMemberModalOpen, setIsAddMemberModalOpen] = useState(false);
+  const [isCreateRoleModalOpen, setIsCreateRoleModalOpen] = useState(false);
+
+  // 管理员特权管理子标签页
+  const [permissionSubTab, setPermissionSubTab] = useState<'roles' | 'admins'>('roles');
+
+  // 管理员搜索
+  const [memberSearch, setMemberSearch] = useState('');
+  const [memberSearchResults, setMemberSearchResults] = useState<any[]>([]);
+  const [memberSearchLoading, setMemberSearchLoading] = useState(false);
+  const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Tab 4 (访问与审计) Sub-tabs: 'access' (用户访问统计) | 'system' (系统审计日志)
   const [statsSubTab, setStatsSubTab] = useState<'access' | 'system'>('access');
@@ -250,7 +298,7 @@ export default function AdminAppRegistry({
   const [editingApp, setEditingApp] = useState<DBApp | null>(null);
   const [isDeleting, setIsDeleting] = useState<string | null>(null);
 
-  // Unit and Department 2-level selection state
+  // Unit and Department 2-level selection state for App mainDeptId
   const [selectedUnitId, setSelectedUnitId] = useState('');
 
   const handleUnitChange = (unitId: string) => {
@@ -258,17 +306,26 @@ export default function AdminAppRegistry({
     setMainDeptId('');
   };
 
-  const renderIcon = (iconName: string | null, className = "w-4 h-4") => {
+  const renderIcon = (iconName: string | null, className = 'w-4 h-4') => {
     switch (iconName) {
-      case 'Zap': return <Zap className={className} />;
-      case 'Calculator': return <Calculator className={className} />;
-      case 'LayoutDashboard': return <LayoutDashboard className={className} />;
-      case 'FileText': return <FileText className={className} />;
-      case 'Activity': return <Activity className={className} />;
-      case 'Leaf': return <Leaf className={className} />;
-      case 'Clock': return <Clock className={className} />;
-      case 'Hammer': return <Hammer className={className} />;
-      default: return <LayoutDashboard className={className} />;
+      case 'Zap':
+        return <Zap className={className} />;
+      case 'Calculator':
+        return <Calculator className={className} />;
+      case 'LayoutDashboard':
+        return <LayoutDashboard className={className} />;
+      case 'FileText':
+        return <FileText className={className} />;
+      case 'Activity':
+        return <Activity className={className} />;
+      case 'Leaf':
+        return <Leaf className={className} />;
+      case 'Clock':
+        return <Clock className={className} />;
+      case 'Hammer':
+        return <Hammer className={className} />;
+      default:
+        return <LayoutDashboard className={className} />;
     }
   };
 
@@ -280,9 +337,9 @@ export default function AdminAppRegistry({
 
   useEffect(() => {
     setMounted(true);
-    const initialTheme = document.documentElement.getAttribute('data-theme') as 'light' | 'dark' || 'light';
+    const initialTheme = (document.documentElement.getAttribute('data-theme') as 'light' | 'dark') || 'light';
     setTheme(initialTheme);
-    
+
     const savedCollapse = localStorage.getItem('admin-sidebar-collapsed');
     if (savedCollapse === 'true') {
       setIsSidebarCollapsed(true);
@@ -307,7 +364,6 @@ export default function AdminAppRegistry({
     setIsLoggingOut(true);
     try {
       await fetch('/api/auth/logout', { method: 'POST' });
-      // Redirect back to the homepage (SSO logout / guest view)
       window.location.href = '/';
     } catch (err) {
       console.error('Failed to log out:', err);
@@ -320,8 +376,6 @@ export default function AdminAppRegistry({
 
   // Time Range Filter for stats
   const [timeFilter, setTimeFilter] = useState<'24h' | '7d' | '30d' | 'all'>('all');
-
-  // Stats Log Pagination
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 15;
 
@@ -334,10 +388,12 @@ export default function AdminAppRegistry({
   const [isMaintenance, setIsMaintenance] = useState(false);
   const [sortOrder, setSortOrder] = useState(0);
   const [mainDeptId, setMainDeptId] = useState('');
-  const [color, setColor] = useState('slate');
+  const [color, setColor] = useState('#10B981');
   const [visibleToAll, setVisibleToAll] = useState(true);
   const [selectedRoleIds, setSelectedRoleIds] = useState<string[]>([]);
   const [selectedDeptIds, setSelectedDeptIds] = useState<string[]>([]);
+  const [deptTreeSearch, setDeptTreeSearch] = useState('');
+  const [expandedDeptIds, setExpandedDeptIds] = useState<Set<string>>(new Set());
 
   const [errorMessage, setErrorMessage] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -355,12 +411,228 @@ export default function AdminAppRegistry({
   const [widgetSubmitting, setWidgetSubmitting] = useState(false);
   const [isDeletingWidget, setIsDeletingWidget] = useState<string | null>(null);
 
-  // Member Search State
-  const [memberSearch, setMemberSearch] = useState('');
-  const [memberSearchResults, setMemberSearchResults] = useState<any[]>([]);
-  const [memberSearchLoading, setMemberSearchLoading] = useState(false);
-  const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  // New Role Form State
+  const [newRoleKey, setNewRoleKey] = useState('');
+  const [newRoleName, setNewRoleName] = useState('');
+  const [newRoleDesc, setNewRoleDesc] = useState('');
+  const [newRoleSubmitting, setNewRoleSubmitting] = useState(false);
+  const [newRoleError, setNewRoleError] = useState('');
 
+  // ----------------------------------------------------
+  // 加载当前激活角色的成员数据
+  // ----------------------------------------------------
+  const fetchRoleMembers = async (roleId: string) => {
+    if (!roleId) return;
+    setRoleMembersLoading(true);
+    try {
+      const res = await fetch(`/api/admin/roles/${roleId}/members`);
+      if (res.ok) {
+        const data = await res.json();
+        setSelectedRoleMembers(data);
+      }
+    } catch (err) {
+      console.error('Failed to fetch role members:', err);
+    } finally {
+      setRoleMembersLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'members' && permissionSubTab === 'roles' && activeRoleId) {
+      fetchRoleMembers(activeRoleId);
+      setRoleMemberKeyword('');
+      setRoleMembersPage(1);
+    }
+  }, [activeTab, permissionSubTab, activeRoleId]);
+
+  // 从角色中移除成员
+  const handleRemoveMemberFromRole = async (memberId: string, memberName: string) => {
+    if (!confirm(`确定要将【${memberName}】从当前角色中移除吗？`)) return;
+
+    try {
+      const res = await fetch(`/api/admin/roles/${activeRoleId}/members/${memberId}`, {
+        method: 'DELETE',
+      });
+      if (res.ok) {
+        // 1. 本地即时移除成员
+        setSelectedRoleMembers((prev) => prev.filter((m) => m.id !== memberId));
+        // 2. 本地即时更新左侧角色的人数
+        setRolesList((prev) =>
+          prev.map((r) =>
+            r.id === activeRoleId ? { ...r, memberCount: Math.max(0, (r.memberCount || 1) - 1) } : r
+          )
+        );
+      } else {
+        const err = await res.json();
+        alert(err.error || '移除失败');
+      }
+    } catch (err) {
+      console.error('Failed to remove member from role:', err);
+      alert('移除失败，请重试');
+    }
+  };
+
+  // 创建新角色
+  const handleCreateRoleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newRoleKey.trim() || !newRoleName.trim()) {
+      setNewRoleError('角色标识和角色名称为必填项');
+      return;
+    }
+
+    setNewRoleSubmitting(true);
+    setNewRoleError('');
+
+    try {
+      const res = await fetch('/api/admin/roles', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          key: newRoleKey.trim(),
+          name: newRoleName.trim(),
+          description: newRoleDesc.trim() || undefined,
+        }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        setNewRoleError(data.error || '创建角色失败');
+        setNewRoleSubmitting(false);
+        return;
+      }
+
+      const createdRole = await res.json();
+      const newRoleObj: RoleOption = {
+        id: createdRole.id,
+        key: createdRole.key,
+        name: createdRole.name,
+        description: createdRole.description || null,
+        memberCount: 0,
+      };
+
+      setRolesList((prev) => [...prev, newRoleObj]);
+      setActiveRoleId(newRoleObj.id);
+      setIsCreateRoleModalOpen(false);
+      setNewRoleKey('');
+      setNewRoleName('');
+      setNewRoleDesc('');
+    } catch (err: any) {
+      setNewRoleError(err.message || '网络异常');
+    } finally {
+      setNewRoleSubmitting(false);
+    }
+  };
+
+  // ----------------------------------------------------
+  // 编辑与删除业务角色操作
+  // ----------------------------------------------------
+  const [isEditRoleModalOpen, setIsEditRoleModalOpen] = useState(false);
+  const [editingRoleId, setEditingRoleId] = useState('');
+  const [editRoleKey, setEditRoleKey] = useState('');
+  const [editRoleName, setEditRoleName] = useState('');
+  const [editRoleDesc, setEditRoleDesc] = useState('');
+  const [editRoleSubmitting, setEditRoleSubmitting] = useState(false);
+  const [editRoleError, setEditRoleError] = useState('');
+  const [isDeletingRole, setIsDeletingRole] = useState(false);
+
+  const openEditRoleModal = (role: RoleOption) => {
+    setEditingRoleId(role.id);
+    setEditRoleKey(role.key);
+    setEditRoleName(role.name);
+    setEditRoleDesc(role.description || '');
+    setEditRoleError('');
+    setIsEditRoleModalOpen(true);
+  };
+
+  const handleEditRoleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editRoleKey.trim() || !editRoleName.trim()) {
+      setEditRoleError('角色标识和角色名称为必填项');
+      return;
+    }
+
+    setEditRoleSubmitting(true);
+    setEditRoleError('');
+
+    try {
+      const res = await fetch(`/api/admin/roles/${editingRoleId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          key: editRoleKey.trim(),
+          name: editRoleName.trim(),
+          description: editRoleDesc.trim() || null,
+        }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        setEditRoleError(data.error || '更新角色失败');
+        setEditRoleSubmitting(false);
+        return;
+      }
+
+      const updatedRole = await res.json();
+      setRolesList((prev) =>
+        prev.map((r) =>
+          r.id === editingRoleId
+            ? {
+                ...r,
+                key: updatedRole.key,
+                name: updatedRole.name,
+                description: updatedRole.description,
+              }
+            : r
+        )
+      );
+
+      setIsEditRoleModalOpen(false);
+    } catch (err: any) {
+      setEditRoleError(err.message || '网络异常');
+    } finally {
+      setEditRoleSubmitting(false);
+    }
+  };
+
+  const handleDeleteRole = async (role: RoleOption) => {
+    if (
+      !confirm(
+        `确定要删除业务角色【${role.name} (@${role.key})】吗？\n\n警告：删除后将解除该角色已绑定的所有员工（${role.memberCount || 0}人）及相关应用的角色可见性授权！`
+      )
+    ) {
+      return;
+    }
+
+    setIsDeletingRole(true);
+    try {
+      const res = await fetch(`/api/admin/roles/${role.id}`, {
+        method: 'DELETE',
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        alert(data.error || '删除角色失败');
+        setIsDeletingRole(false);
+        return;
+      }
+
+      const remainingRoles = rolesList.filter((r) => r.id !== role.id);
+      setRolesList(remainingRoles);
+
+      if (activeRoleId === role.id) {
+        setActiveRoleId(remainingRoles[0]?.id || '');
+      }
+    } catch (err: any) {
+      console.error(err);
+      alert('删除角色失败');
+    } finally {
+      setIsDeletingRole(false);
+    }
+  };
+
+  // ----------------------------------------------------
+  // 应用编辑 / 新增 Modal 操作
+  // ----------------------------------------------------
   const openAddModal = () => {
     setEditingApp(null);
     setKey('');
@@ -368,18 +640,15 @@ export default function AdminAppRegistry({
     setDescription('');
     setUrl('');
     setIcon('LayoutDashboard');
-    
-    // Automatically select a random theme color on App creation
-    const colorsList = ['#10B981', '#3B82F6', '#F59E0B', '#8B5CF6', '#06B6D4', '#64748B'];
-    const randomColor = colorsList[Math.floor(Math.random() * colorsList.length)];
+
+    const randomColor = APP_COLORS_PRESETS[Math.floor(Math.random() * APP_COLORS_PRESETS.length)].value;
     setColor(randomColor);
 
     setIsMaintenance(false);
     setSortOrder(0);
     setMainDeptId('');
 
-    // Default unit to '镇海石化建安工程股份有限公司'
-    const defaultUnit = departmentsTree.find(u => u.name === '镇海石化建安工程股份有限公司');
+    const defaultUnit = departmentsTree.find((u) => u.name === '镇海石化建安工程股份有限公司') || departmentsTree[0];
     setSelectedUnitId(defaultUnit ? defaultUnit.id : '');
 
     setVisibleToAll(true);
@@ -396,19 +665,18 @@ export default function AdminAppRegistry({
     setDescription(app.description || '');
     setUrl(app.url);
     setIcon(app.icon || 'LayoutDashboard');
-    setColor(app.color || 'slate');
+    setColor(getAppHexColor(app.color, app.key));
     setIsMaintenance(app.isMaintenance);
     setSortOrder(app.sortOrder);
     setMainDeptId(app.mainDeptId || '');
 
-    // Find parent unit containing the app's mainDeptId
     if (app.mainDeptId) {
       const parentUnit = departmentsTree.find((u) =>
-        u.departments.some((d) => d.id === app.mainDeptId)
+        u.departments.some((d) => d.id === app.mainDeptId || getAllDescendantDeptIds(d).includes(app.mainDeptId!))
       );
-      setSelectedUnitId(parentUnit ? parentUnit.id : '');
+      setSelectedUnitId(parentUnit ? parentUnit.id : (departmentsTree[0]?.id || ''));
     } else {
-      const defaultUnit = departmentsTree.find(u => u.name === '镇海石化建安工程股份有限公司');
+      const defaultUnit = departmentsTree.find((u) => u.name === '镇海石化建安工程股份有限公司') || departmentsTree[0];
       setSelectedUnitId(defaultUnit ? defaultUnit.id : '');
     }
 
@@ -442,7 +710,7 @@ export default function AdminAppRegistry({
         mainDeptId: mainDeptId || null,
         visibleToAll,
         roleIds: selectedRoleIds,
-        deptIds: selectedDeptIds
+        deptIds: selectedDeptIds,
       };
 
       let res;
@@ -460,64 +728,154 @@ export default function AdminAppRegistry({
         });
       }
 
-      const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error || '保存失败');
+        const data = await res.json();
+        setErrorMessage(data.error || '操作失败');
+        setIsSubmitting(false);
+        return;
       }
 
-      // Re-fetch all apps to get updated list
-      const listRes = await fetch('/api/admin/apps');
-      if (listRes.ok) {
-        const freshApps = await listRes.json();
-        // Map roles and depts for fresh app array
-        setApps(freshApps.map((a: any) => ({
-          ...a,
-          roleIds: a.rolePermissions?.map((rp: any) => rp.roleId) || [],
-          deptIds: a.deptPermissions?.map((dp: any) => dp.departmentId) || []
-        })));
+      const savedApp = await res.json();
+
+      if (editingApp) {
+        setApps(apps.map((a) => (a.id === editingApp.id ? savedApp : a)));
+      } else {
+        setApps([...apps, savedApp]);
       }
 
       setIsModalOpen(false);
     } catch (err: any) {
-      setErrorMessage(err.message);
+      setErrorMessage(err.message || '网络错误');
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const handleDelete = async (id: string) => {
-    setIsDeleting(id);
+  const handleDelete = async (appId: string) => {
+    if (!confirm('确定要删除此应用吗？此操作无法撤销。')) return;
+
+    setIsDeleting(appId);
     try {
-      const res = await fetch(`/api/admin/apps/${id}`, {
+      const res = await fetch(`/api/admin/apps/${appId}`, {
         method: 'DELETE',
       });
       if (res.ok) {
-        setApps(apps.filter(app => app.id !== id));
+        setApps(apps.filter((a) => a.id !== appId));
       } else {
         const data = await res.json();
-        alert(`删除失败: ${data.error}`);
+        alert(data.error || '删除失败');
       }
     } catch (err) {
-      console.error('Delete failed:', err);
+      console.error(err);
+      alert('删除失败');
     } finally {
       setIsDeleting(null);
     }
   };
 
-  // Toggle roles / departments in selection
+  // 部门树形选择递归级联切换
+  const toggleDepartmentSelection = (deptNode: DepartmentTreeNode) => {
+    const descendantIds = getAllDescendantDeptIds(deptNode);
+    const isNodeSelected = selectedDeptIds.includes(deptNode.id);
+
+    if (isNodeSelected) {
+      // 取消选中该节点及其所有子节点
+      setSelectedDeptIds((prev) => prev.filter((id) => !descendantIds.includes(id)));
+    } else {
+      // 级联选中该节点及其所有子节点
+      setSelectedDeptIds((prev) => Array.from(new Set([...prev, ...descendantIds])));
+    }
+  };
+
+  // 单位下全选/取消全选所有部门
+  const toggleUnitSelection = (unit: UnitTreeNode) => {
+    const unitDeptIds = getAllDeptIdsInUnit(unit);
+    const isAllSelected = unitDeptIds.length > 0 && unitDeptIds.every((id) => selectedDeptIds.includes(id));
+
+    if (isAllSelected) {
+      setSelectedDeptIds((prev) => prev.filter((id) => !unitDeptIds.includes(id)));
+    } else {
+      setSelectedDeptIds((prev) => Array.from(new Set([...prev, ...unitDeptIds])));
+    }
+  };
+
+  // 角色复选切换
   const toggleRoleSelection = (roleId: string) => {
-    setSelectedRoleIds(prev =>
-      prev.includes(roleId) ? prev.filter(id => id !== roleId) : [...prev, roleId]
+    setSelectedRoleIds((prev) =>
+      prev.includes(roleId) ? prev.filter((id) => id !== roleId) : [...prev, roleId]
     );
   };
 
-  const toggleDeptSelection = (deptId: string) => {
-    setSelectedDeptIds(prev =>
-      prev.includes(deptId) ? prev.filter(id => id !== deptId) : [...prev, deptId]
-    );
+  // ----------------------------------------------------
+  // 管理员特权分配检索与更新
+  // ----------------------------------------------------
+  const triggerMemberSearch = (query: string) => {
+    if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
+    if (!query.trim()) {
+      setMemberSearchResults([]);
+      return;
+    }
+
+    setMemberSearchLoading(true);
+    searchTimeoutRef.current = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/admin/members?search=${encodeURIComponent(query.trim())}`);
+        if (res.ok) {
+          const data = await res.json();
+          setMemberSearchResults(data);
+        }
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setMemberSearchLoading(false);
+      }
+    }, 300);
   };
 
-  // Widget Actions
+  const handleUpdateAdminType = async (memberId: string, newType: string) => {
+    try {
+      const res = await fetch('/api/admin/members', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ memberId, adminType: newType }),
+      });
+      if (res.ok) {
+        const updated = await res.json();
+        setAdminMembers((prev) => {
+          const exists = prev.some((m) => m.id === memberId);
+          if (newType === 'NONE') {
+            return prev.filter((m) => m.id !== memberId);
+          }
+          const formatted: AdminMember = {
+            id: updated.id,
+            name: updated.name,
+            loginName: updated.loginName,
+            adminType: updated.adminType,
+            deptName: updated.department?.name || '无部门',
+            unitName: updated.unit?.name || '无单位',
+          };
+          if (exists) {
+            return prev.map((m) => (m.id === memberId ? formatted : m));
+          } else {
+            return [...prev, formatted];
+          }
+        });
+        setMemberSearchResults((prev) =>
+          prev.map((m) => (m.id === memberId ? { ...m, adminType: newType } : m))
+        );
+      } else {
+        const err = await res.json();
+        alert(err.error || '更新管理员权限失败');
+      }
+    } catch (err) {
+      console.error(err);
+      alert('更新管理员权限失败');
+    }
+  };
+
+  // ----------------------------------------------------
+  // Widget Form
+  // ----------------------------------------------------
   const openAddWidgetModal = () => {
     setEditingWidget(null);
     setWidgetTitle('');
@@ -544,22 +902,21 @@ export default function AdminAppRegistry({
 
   const handleWidgetSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!widgetTitle || !widgetUrl) {
-      setWidgetError('标题和链接地址为必填项');
+    if (!widgetTitle.trim() || !widgetUrl.trim()) {
+      setWidgetError('组件标题与嵌入URL为必填项');
       return;
     }
-
     setWidgetSubmitting(true);
     setWidgetError('');
 
     try {
       const payload = {
-        title: widgetTitle,
+        title: widgetTitle.trim(),
         appId: widgetAppId || null,
         type: widgetType,
-        url: widgetUrl,
+        url: widgetUrl.trim(),
         widthClass: widgetWidthClass,
-        sortOrder: Number(widgetSortOrder)
+        sortOrder: widgetSortOrder,
       };
 
       let res;
@@ -567,1001 +924,810 @@ export default function AdminAppRegistry({
         res = await fetch(`/api/admin/widgets/${editingWidget.id}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
+          body: JSON.stringify(payload),
         });
       } else {
         res = await fetch('/api/admin/widgets', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
+          body: JSON.stringify(payload),
         });
       }
 
-      const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error || '保存 Widget 失败');
+        const data = await res.json();
+        setWidgetError(data.error || '保存组件失败');
+        setWidgetSubmitting(false);
+        return;
       }
 
-      // Re-fetch widgets
-      const widgetListRes = await fetch('/api/admin/widgets');
-      if (widgetListRes.ok) {
-        const freshWidgets = await widgetListRes.json();
-        setWidgets(freshWidgets.map((w: any) => ({
-          id: w.id,
-          title: w.title,
-          appId: w.appId,
-          appName: w.app?.name || null,
-          type: w.type,
-          url: w.url,
-          widthClass: w.widthClass,
-          sortOrder: w.sortOrder
-        })));
-      }
+      const saved = await res.json();
+      const formatted: WidgetConfig = {
+        id: saved.id,
+        title: saved.title,
+        appId: saved.appId || null,
+        appName: saved.app?.name || null,
+        type: saved.type,
+        url: saved.url,
+        widthClass: saved.widthClass,
+        sortOrder: saved.sortOrder,
+      };
 
+      if (editingWidget) {
+        setWidgets(widgets.map((w) => (w.id === editingWidget.id ? formatted : w)));
+      } else {
+        setWidgets([...widgets, formatted]);
+      }
       setIsWidgetModalOpen(false);
     } catch (err: any) {
-      setWidgetError(err.message);
+      setWidgetError(err.message || '网络错误');
     } finally {
       setWidgetSubmitting(false);
     }
   };
 
-  const handleWidgetDelete = async (id: string) => {
-    setIsDeletingWidget(id);
+  const handleDeleteWidget = async (widgetId: string) => {
+    if (!confirm('确定要移除此 Widget 组件吗？')) return;
+    setIsDeletingWidget(widgetId);
     try {
-      const res = await fetch(`/api/admin/widgets/${id}`, {
-        method: 'DELETE'
-      });
+      const res = await fetch(`/api/admin/widgets/${widgetId}`, { method: 'DELETE' });
       if (res.ok) {
-        setWidgets(widgets.filter(w => w.id !== id));
+        setWidgets(widgets.filter((w) => w.id !== widgetId));
       } else {
-        const data = await res.json();
-        alert(`删除 Widget 失败: ${data.error}`);
+        alert('删除失败');
       }
     } catch (err) {
-      console.error('Delete widget failed:', err);
+      console.error(err);
+      alert('删除失败');
     } finally {
       setIsDeletingWidget(null);
     }
   };
 
-  // Member Search Actions
-  const triggerMemberSearch = (val: string) => {
-    if (searchTimeoutRef.current) {
-      clearTimeout(searchTimeoutRef.current);
-    }
+  // ----------------------------------------------------
+  // 过滤计算
+  // ----------------------------------------------------
+  const filteredRoles = useMemo(() => {
+    if (!roleSearchTerm.trim()) return rolesList;
+    const term = roleSearchTerm.trim().toLowerCase();
+    return rolesList.filter(
+      (r) =>
+        r.name.toLowerCase().includes(term) ||
+        r.key.toLowerCase().includes(term) ||
+        (r.description && r.description.toLowerCase().includes(term))
+    );
+  }, [rolesList, roleSearchTerm]);
 
-    if (!val.trim()) {
-      setMemberSearchResults([]);
-      return;
-    }
+  const activeRole = useMemo(() => {
+    return rolesList.find((r) => r.id === activeRoleId) || rolesList[0] || null;
+  }, [rolesList, activeRoleId]);
 
-    setMemberSearchLoading(true);
-    searchTimeoutRef.current = setTimeout(async () => {
-      try {
-        const res = await fetch(`/api/admin/members?search=${encodeURIComponent(val)}`);
-        if (res.ok) {
-          const data = await res.json();
-          const adminIds = adminMembers.map(a => a.id);
-          setMemberSearchResults(data.map((m: any) => ({
-            id: m.id,
-            name: m.name,
-            loginName: m.loginName,
-            unitName: m.unit?.name || '无单位',
-            deptName: m.department?.name || '无部门'
-          })).filter((m: any) => !adminIds.includes(m.id)));
-        }
-      } catch (err) {
-        console.error('Search members failed:', err);
-      } finally {
-        setMemberSearchLoading(false);
-      }
-    }, 400);
-  };
+  const filteredActiveRoleMembers = useMemo(() => {
+    if (!roleMemberKeyword.trim()) return selectedRoleMembers;
+    const kw = roleMemberKeyword.trim().toLowerCase();
+    return selectedRoleMembers.filter(
+      (m) =>
+        m.name.toLowerCase().includes(kw) ||
+        m.loginName.toLowerCase().includes(kw) ||
+        (m.code && m.code.toLowerCase().includes(kw)) ||
+        m.deptName.toLowerCase().includes(kw) ||
+        m.unitName.toLowerCase().includes(kw)
+    );
+  }, [selectedRoleMembers, roleMemberKeyword]);
 
-  const handleAdminTypeChange = async (
-    memberId: string,
-    adminType: 'NONE' | 'SYS_ADMIN' | 'OPS_ADMIN' | 'DEPT_ADMIN',
-    searchMemberObj?: any
-  ) => {
-    try {
-      const res = await fetch('/api/admin/members', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ memberId, adminType })
-      });
+  const paginatedRoleMembers = useMemo(() => {
+    const start = (roleMembersPage - 1) * roleMembersPerPage;
+    return filteredActiveRoleMembers.slice(start, start + roleMembersPerPage);
+  }, [filteredActiveRoleMembers, roleMembersPage]);
 
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || '分配管理员权限失败');
-      }
+  const totalRoleMemberPages = Math.ceil(filteredActiveRoleMembers.length / roleMembersPerPage) || 1;
 
-      if (adminType === 'NONE') {
-        setAdminMembers(prev => prev.filter(a => a.id !== memberId));
-      } else {
-        const exists = adminMembers.some(a => a.id === memberId);
-        if (exists) {
-          setAdminMembers(prev => prev.map(a => a.id === memberId ? { ...a, adminType } : a));
-        } else if (searchMemberObj) {
-          const newAdmin: AdminMember = {
-            id: searchMemberObj.id,
-            name: searchMemberObj.name,
-            loginName: searchMemberObj.loginName,
-            adminType,
-            deptName: searchMemberObj.deptName,
-            unitName: searchMemberObj.unitName
-          };
-          setAdminMembers(prev => [...prev, newAdmin].sort((a, b) => a.name.localeCompare(b.name)));
-          setMemberSearchResults(prev => prev.filter(m => m.id !== memberId));
-        } else {
-          const listRes = await fetch('/api/admin/members?type=admins');
-          if (listRes.ok) {
-            const data = await listRes.json();
-            setAdminMembers(data.map((m: any) => ({
-              id: m.id,
-              name: m.name,
-              loginName: m.loginName,
-              adminType: m.adminType,
-              deptName: m.department?.name || '无部门',
-              unitName: m.unit?.name || '无单位'
-            })));
-          }
-        }
-      }
-    } catch (err: any) {
-      alert(err.message);
-    }
-  };
-
-  const triggerRoleMemberSearch = (val: string) => {
-    if (roleSearchTimeoutRef.current) {
-      clearTimeout(roleSearchTimeoutRef.current);
-    }
-
-    if (!val.trim()) {
-      setRoleMemberSearchResults([]);
-      setRoleMemberSearchLoading(false);
-      return;
-    }
-
-    setRoleMemberSearchLoading(true);
-    roleSearchTimeoutRef.current = setTimeout(async () => {
-      try {
-        const res = await fetch(`/api/admin/members?search=${encodeURIComponent(val)}`);
-        if (res.ok) {
-          const data = await res.json();
-          setRoleMemberSearchResults(data.map((m: any) => ({
-            id: m.id,
-            name: m.name,
-            loginName: m.loginName,
-            unitName: m.unit?.name || '无单位',
-            deptName: m.department?.name || '无部门',
-            roles: (m.roles || []).map((r: any) => ({
-              id: r.role.id,
-              key: r.role.key,
-              name: r.role.name
-            }))
-          })));
-        }
-      } catch (err) {
-        console.error('Search role members failed:', err);
-      } finally {
-        setRoleMemberSearchLoading(false);
-      }
-    }, 400);
-  };
-
-  const handleToggleMemberRole = async (memberId: string, roleId: string, currentRoles: Array<{ id: string; key: string; name: string }>) => {
-    const currentRoleIds = currentRoles.map(r => r.id);
-    const hasRole = currentRoleIds.includes(roleId);
-    const nextRoleIds = hasRole
-      ? currentRoleIds.filter(id => id !== roleId)
-      : [...currentRoleIds, roleId];
-
-    try {
-      const res = await fetch('/api/admin/members', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ memberId, roleIds: nextRoleIds })
-      });
-
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || '分配角色失败');
-      }
-
-      const updated: any = await res.json();
-      const updatedRoles = (updated.roles || []).map((r: any) => ({
-        id: r.role.id,
-        key: r.role.key,
-        name: r.role.name
-      }));
-
-      // Update in search results list
-      setRoleMemberSearchResults(prev => prev.map(m => m.id === memberId ? {
-        ...m,
-        roles: updatedRoles
-      } : m));
-
-      // Update in assigned members list
-      setRoleAssignedMembers(prev => {
-        const exists = prev.some(m => m.id === memberId);
-        if (updatedRoles.length === 0) {
-          return prev.filter(m => m.id !== memberId);
-        }
-        const updatedEntry: RoleAssignedMember = {
-          id: updated.id,
-          name: updated.name,
-          loginName: updated.loginName,
-          deptName: updated.department?.name || '无部门',
-          unitName: updated.unit?.name || '无单位',
-          roles: updatedRoles
-        };
-        if (exists) {
-          return prev.map(m => m.id === memberId ? updatedEntry : m);
-        } else {
-          return [updatedEntry, ...prev].sort((a, b) => a.name.localeCompare(b.name));
-        }
-      });
-    } catch (err: any) {
-      alert(err.message);
-    }
-  };
-
-  // Filter logs by selected time filter
-  const getFilteredLogs = () => {
-    if (timeFilter === 'all') return accessLogs;
-    const now = new Date();
-    const filterMs =
-      timeFilter === '24h' ? 24 * 60 * 60 * 1000 :
-        timeFilter === '7d' ? 7 * 24 * 60 * 60 * 1000 :
-          30 * 24 * 60 * 60 * 1000;
-    return accessLogs.filter(log => {
-      const logDate = new Date(log.timestamp);
-      return now.getTime() - logDate.getTime() <= filterMs;
+  // 访问日志过滤
+  const filteredAccessLogs = useMemo(() => {
+    const now = new Date().getTime();
+    return accessLogs.filter((log) => {
+      const logTime = new Date(log.timestamp).getTime();
+      if (timeFilter === '24h') return now - logTime <= 24 * 60 * 60 * 1000;
+      if (timeFilter === '7d') return now - logTime <= 7 * 24 * 60 * 60 * 1000;
+      if (timeFilter === '30d') return now - logTime <= 30 * 24 * 60 * 60 * 1000;
+      return true;
     });
-  };
+  }, [accessLogs, timeFilter]);
 
-  const filteredLogs = getFilteredLogs();
+  const paginatedAccessLogs = useMemo(() => {
+    const start = (currentPage - 1) * itemsPerPage;
+    return filteredAccessLogs.slice(start, start + itemsPerPage);
+  }, [filteredAccessLogs, currentPage]);
 
-  // Aggregate stats per application
-  const appVisitsMap: Record<string, number> = {};
-  filteredLogs.forEach(log => {
-    const appName = log.app?.name || '未知系统';
-    appVisitsMap[appName] = (appVisitsMap[appName] || 0) + 1;
-  });
+  const totalPages = Math.ceil(filteredAccessLogs.length / itemsPerPage) || 1;
 
-  const rankList = Object.entries(appVisitsMap)
-    .map(([name, count]) => ({ name, count }))
-    .sort((a, b) => b.count - a.count);
-
-  const maxCount = rankList[0]?.count || 1;
-  const totalVisits = filteredLogs.length;
-  const activeUsersCount = new Set(filteredLogs.map(l => l.loginName)).size;
-  const topApp = rankList[0]?.name || '无';
-
-  // Role Counts
-  const roleCounts: Record<string, number> = {};
-  roles.forEach(r => { roleCounts[r.key] = 0; });
-  roleAssignedMembers.forEach(m => {
-    m.roles.forEach(r => {
-      roleCounts[r.key] = (roleCounts[r.key] || 0) + 1;
+  // 系统审计日志过滤
+  const filteredSystemLogs = useMemo(() => {
+    return systemLogs.filter((log) => {
+      if (logTypeFilter !== 'all' && log.actionType !== logTypeFilter) return false;
+      if (systemLogSearch.trim()) {
+        const kw = systemLogSearch.trim().toLowerCase();
+        const matchUser = log.userName && log.userName.toLowerCase().includes(kw);
+        const matchLogin = log.loginName.toLowerCase().includes(kw);
+        const matchDetail = log.detail.toLowerCase().includes(kw);
+        const matchIp = log.ip && log.ip.toLowerCase().includes(kw);
+        return matchUser || matchLogin || matchDetail || matchIp;
+      }
+      return true;
     });
-  });
+  }, [systemLogs, logTypeFilter, systemLogSearch]);
 
-  // Stats Pagination
-  const totalPages = Math.ceil(filteredLogs.length / itemsPerPage);
-  const paginatedLogs = filteredLogs.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+  const paginatedSystemLogs = useMemo(() => {
+    const start = (systemLogPage - 1) * logsPerPage;
+    return filteredSystemLogs.slice(start, start + logsPerPage);
+  }, [filteredSystemLogs, systemLogPage]);
 
-  const handlePageChange = (pageNum: number) => {
-    if (pageNum >= 1 && pageNum <= totalPages) {
-      setCurrentPage(pageNum);
-    }
-  };
-
-  // System Logs Filtering and Pagination
-  const filteredSystemLogs = systemLogs.filter(log => {
-    const matchesSearch =
-      log.loginName.toLowerCase().includes(systemLogSearch.toLowerCase()) ||
-      (log.userName || '').toLowerCase().includes(systemLogSearch.toLowerCase()) ||
-      log.detail.toLowerCase().includes(systemLogSearch.toLowerCase());
-    
-    const matchesType = logTypeFilter === 'all' || log.actionType === logTypeFilter;
-    return matchesSearch && matchesType;
-  });
-
-  const totalLogPages = Math.ceil(filteredSystemLogs.length / logsPerPage);
-  const paginatedSystemLogs = filteredSystemLogs.slice(
-    (systemLogPage - 1) * logsPerPage,
-    systemLogPage * logsPerPage
-  );
+  const totalLogPages = Math.ceil(filteredSystemLogs.length / logsPerPage) || 1;
 
   return (
-    <div className="flex h-screen w-full overflow-hidden bg-canvas text-text-main font-sans transition-colors duration-200">
-      {/* Left Sidebar */}
-      <aside className={`hidden lg:flex h-screen flex-col bg-zpje-brand text-white border-r border-card-border transition-all duration-300 ease-in-out shrink-0 z-40 ${isSidebarCollapsed ? 'w-16' : 'w-64'}`}>
-        {/* Logo & Title */}
-        <div className={`flex h-16 items-center border-b border-white/10 transition-all duration-300 ${isSidebarCollapsed ? 'justify-center px-0 gap-0' : 'px-4 gap-3'} shrink-0`}>
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white p-0.5 shrink-0 shadow-sm">
-            <img
-              src="/logo_zpje.jpg"
-              className="rounded object-contain w-full h-full"
-              alt="建安万维"
-            />
+    <div className="min-h-screen bg-canvas text-text-main flex flex-col md:flex-row antialiased font-sans">
+      {/* Sidebar Navigation */}
+      <div
+        className={`${
+          isSidebarCollapsed ? 'w-20' : 'w-64'
+        } shrink-0 bg-sidebar border-r border-card-border p-4 flex flex-col justify-between transition-all duration-300 z-30 shadow-md`}
+      >
+        <div className="flex flex-col gap-6">
+          {/* Brand Header */}
+          <div className={`flex items-center gap-3 px-2 ${isSidebarCollapsed ? 'justify-center' : ''}`}>
+            <div className="w-10 h-10 rounded-xl bg-zpje-accent flex items-center justify-center text-white font-bold shadow-md shadow-zpje-accent/20 shrink-0">
+              <Shield className="w-5 h-5 text-white" />
+            </div>
+            {!isSidebarCollapsed && (
+              <div className="flex flex-col min-w-0">
+                <span className="font-extrabold text-title text-base tracking-tight truncate">
+                  Omni 管理后台
+                </span>
+                <span className="text-[10px] text-text-sec font-mono truncate">
+                  Enterprise Center
+                </span>
+              </div>
+            )}
           </div>
-          <div className={`flex flex-col overflow-hidden transition-all duration-300 ${isSidebarCollapsed ? 'w-0 opacity-0' : 'w-auto opacity-100'}`}>
-            <span className="text-lg font-bold tracking-wider whitespace-nowrap text-white">建安万维</span>
-            <span className="text-[12px] font-bold text-white/50 tracking-widest -mt-1 font-sans">管理后台</span>
-          </div>
+
+          {/* Navigation Links */}
+          <nav className="flex flex-col gap-1.5">
+            <button
+              onClick={() => setActiveTab('apps')}
+              className={`w-full flex items-center px-3 py-2.5 rounded-lg border text-sm font-semibold transition-all duration-300 text-left cursor-pointer ${
+                isSidebarCollapsed ? 'justify-center' : ''
+              } ${
+                activeTab === 'apps'
+                  ? 'bg-zpje-accent border-transparent text-white shadow-sm'
+                  : 'bg-transparent border-transparent text-text-sec hover:text-title hover:bg-sidebar-hover'
+              }`}
+            >
+              <LayoutDashboard className="h-4 w-4 shrink-0" />
+              {!isSidebarCollapsed && <span className="ml-3 truncate">应用管理中心</span>}
+            </button>
+
+            <button
+              onClick={() => setActiveTab('widgets')}
+              className={`w-full flex items-center px-3 py-2.5 rounded-lg border text-sm font-semibold transition-all duration-300 text-left cursor-pointer ${
+                isSidebarCollapsed ? 'justify-center' : ''
+              } ${
+                activeTab === 'widgets'
+                  ? 'bg-zpje-accent border-transparent text-white shadow-sm'
+                  : 'bg-transparent border-transparent text-text-sec hover:text-title hover:bg-sidebar-hover'
+              }`}
+            >
+              <Layers className="h-4 w-4 shrink-0" />
+              {!isSidebarCollapsed && <span className="ml-3 truncate">Widget 卡片配置</span>}
+            </button>
+
+            {(isSystemAdmin || isOpsAdmin) && (
+              <button
+                onClick={() => setActiveTab('members')}
+                className={`w-full flex items-center px-3 py-2.5 rounded-lg border text-sm font-semibold transition-all duration-300 text-left cursor-pointer ${
+                  isSidebarCollapsed ? 'justify-center' : ''
+                } ${
+                  activeTab === 'members'
+                    ? 'bg-zpje-accent border-transparent text-white shadow-sm'
+                    : 'bg-transparent border-transparent text-text-sec hover:text-title hover:bg-sidebar-hover'
+                }`}
+              >
+                <Shield className="h-4 w-4 shrink-0" />
+                {!isSidebarCollapsed && <span className="ml-3 truncate">权限与角色分配</span>}
+              </button>
+            )}
+
+            <button
+              onClick={() => setActiveTab('stats')}
+              className={`w-full flex items-center px-3 py-2.5 rounded-lg border text-sm font-semibold transition-all duration-300 text-left cursor-pointer ${
+                isSidebarCollapsed ? 'justify-center' : ''
+              } ${
+                activeTab === 'stats'
+                  ? 'bg-zpje-accent border-transparent text-white shadow-sm'
+                  : 'bg-transparent border-transparent text-text-sec hover:text-title hover:bg-sidebar-hover'
+              }`}
+            >
+              <BarChart3 className="h-4 w-4 shrink-0" />
+              {!isSidebarCollapsed && <span className="ml-3 truncate">访问与审计统计</span>}
+            </button>
+          </nav>
         </div>
 
-        {/* Tab switches */}
-        <nav className="flex-1 py-6 px-3 flex flex-col gap-1.5 overflow-y-auto">
-          <button
-            onClick={() => setActiveTab('apps')}
-            className={`w-full flex items-center px-3 py-2.5 rounded-lg border text-sm font-semibold transition-all duration-300 text-left cursor-pointer ${isSidebarCollapsed ? 'justify-center' : ''} ${activeTab === 'apps'
-              ? 'bg-zpje-accent border-transparent text-white shadow-sm'
-              : 'bg-transparent border-transparent text-white/80 hover:text-white hover:bg-white/10'
-              }`}
+        {/* Sidebar Footer Controls */}
+        <div className="flex flex-col gap-2 pt-4 border-t border-card-border">
+          <a
+            href="/"
+            className={`flex items-center gap-3 px-3 py-2 text-xs font-semibold rounded-lg text-text-sec hover:text-title hover:bg-sidebar-hover transition-colors ${
+              isSidebarCollapsed ? 'justify-center' : ''
+            }`}
           >
-            <Layers className="h-4 w-4 shrink-0" />
-            <span className={`transition-all duration-300 whitespace-nowrap overflow-hidden ${isSidebarCollapsed ? 'w-0 opacity-0 ml-0' : 'w-auto opacity-100 ml-3'}`}>应用管理</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('widgets')}
-            className={`w-full flex items-center px-3 py-2.5 rounded-lg border text-sm font-semibold transition-all duration-300 text-left cursor-pointer ${isSidebarCollapsed ? 'justify-center' : ''} ${activeTab === 'widgets'
-              ? 'bg-zpje-accent border-transparent text-white shadow-sm'
-              : 'bg-transparent border-transparent text-white/80 hover:text-white hover:bg-white/10'
-              }`}
-          >
-            <LayoutDashboard className="h-4 w-4 shrink-0" />
-            <span className={`transition-all duration-300 whitespace-nowrap overflow-hidden ${isSidebarCollapsed ? 'w-0 opacity-0 ml-0' : 'w-auto opacity-100 ml-3'}`}>Widget 配置</span>
-          </button>
-
-          {(isSystemAdmin || isOpsAdmin) && (
-            <button
-              onClick={() => {
-                setActiveTab('members');
-                setPermissionSubTab('roles');
-                setMemberSearch('');
-                setMemberSearchResults([]);
-                setRoleMemberSearch('');
-                setRoleMemberSearchResults([]);
-              }}
-              className={`w-full flex items-center px-3 py-2.5 rounded-lg border text-sm font-semibold transition-all duration-300 text-left cursor-pointer ${isSidebarCollapsed ? 'justify-center' : ''} ${activeTab === 'members'
-                ? 'bg-zpje-accent border-transparent text-white shadow-sm'
-                : 'bg-transparent border-transparent text-white/80 hover:text-white hover:bg-white/10'
-                }`}
-            >
-              <Shield className="h-4 w-4 shrink-0" />
-              <span className={`transition-all duration-300 whitespace-nowrap overflow-hidden ${isSidebarCollapsed ? 'w-0 opacity-0 ml-0' : 'w-auto opacity-100 ml-3'}`}>权限与角色分配</span>
-            </button>
-          )}
-
-          <button
-            onClick={() => {
-              setActiveTab('stats');
-              setCurrentPage(1);
-            }}
-            className={`w-full flex items-center px-3 py-2.5 rounded-lg border text-sm font-semibold transition-all duration-300 text-left cursor-pointer ${isSidebarCollapsed ? 'justify-center' : ''} ${activeTab === 'stats'
-              ? 'bg-zpje-accent border-transparent text-white shadow-sm'
-              : 'bg-transparent border-transparent text-white/80 hover:text-white hover:bg-white/10'
-              }`}
-          >
-            <BarChart3 className="h-4 w-4 shrink-0" />
-            <span className={`transition-all duration-300 whitespace-nowrap overflow-hidden ${isSidebarCollapsed ? 'w-0 opacity-0 ml-0' : 'w-auto opacity-100 ml-3'}`}>审计与统计</span>
-          </button>
-        </nav>
-
-        {/* Footer controls with Collapse Toggle */}
-        <div className={`p-4 border-t border-white/10 flex flex-col gap-2 transition-all duration-300 ${isSidebarCollapsed && 'items-center px-2'} shrink-0`}>
-          {!isSidebarCollapsed && (
-            <div className="flex items-center gap-3 px-2 py-1.5 text-sm text-white/70 transition-all duration-300">
-              <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse shrink-0" />
-              <span className="truncate">系统运行正常</span>
-            </div>
-          )}
-          {isSidebarCollapsed && (
-            <div className="h-8 w-8 flex items-center justify-center rounded-md text-white/75 hover:text-white hover:bg-white/10 transition-all cursor-pointer" title="系统运行正常">
-              <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
-            </div>
-          )}
+            <Home className="w-4 h-4 shrink-0" />
+            {!isSidebarCollapsed && <span>返回门户前台</span>}
+          </a>
 
           <button
             onClick={toggleSidebarCollapse}
-            className={`flex items-center justify-center rounded-lg text-white/75 hover:text-white hover:bg-white/10 transition-all cursor-pointer h-8 w-full border border-transparent ${isSidebarCollapsed ? 'w-8' : 'px-2 justify-start gap-3'}`}
-            title={isSidebarCollapsed ? '展开菜单' : '收起菜单'}
+            className={`flex items-center gap-3 px-3 py-2 text-xs font-semibold rounded-lg text-text-sec hover:text-title hover:bg-sidebar-hover transition-colors cursor-pointer ${
+              isSidebarCollapsed ? 'justify-center' : ''
+            }`}
           >
             {isSidebarCollapsed ? (
-              <ChevronRight className="h-4 w-4 shrink-0" />
+              <ChevronRight className="w-4 h-4 shrink-0" />
             ) : (
               <>
-                <ChevronLeft className="h-4 w-4 shrink-0" />
-                <span className="text-xs font-semibold whitespace-nowrap">收起菜单</span>
+                <ChevronLeft className="w-4 h-4 shrink-0" />
+                <span>收起侧边栏</span>
               </>
             )}
           </button>
         </div>
-      </aside>
+      </div>
 
-      {/* Right Content Pane */}
-      <div className="flex-1 flex flex-col h-full overflow-hidden min-w-0">
-        {/* Right Header */}
-        <header className="w-full border-b border-card-border bg-nav-bg backdrop-blur-md transition-colors duration-200 h-16 shrink-0 z-40 flex items-center justify-between px-6 md:px-10">
-          <div className="flex items-center gap-2 text-sm font-bold text-text-sec">
-            <span className="text-title">管理后台</span>
-            <span className="text-text-sec/50">/</span>
-            <span className="text-text-sec">
-              {activeTab === 'apps' ? '应用管理' :
-                activeTab === 'widgets' ? 'Widget 配置' :
-                  activeTab === 'members' ? '权限与角色分配' : '审计与统计'}
-            </span>
+      {/* Main Content Area */}
+      <div className="flex-1 flex flex-col min-w-0 bg-canvas overflow-y-auto">
+        {/* Top Header */}
+        <header className="sticky top-0 z-20 h-16 bg-card-surface/80 backdrop-blur-md border-b border-card-border px-6 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <h1 className="text-lg font-bold text-title">
+              {activeTab === 'apps' && '应用管理中心'}
+              {activeTab === 'widgets' && 'Widget 卡片配置'}
+              {activeTab === 'members' && '权限与角色分配中心'}
+              {activeTab === 'stats' && '访问与系统审计'}
+            </h1>
           </div>
 
           <div className="flex items-center gap-3">
-            {/* Theme switcher */}
+            {/* Theme Switcher */}
             {mounted && (
               <button
                 onClick={toggleTheme}
-                className="w-10 h-10 rounded-xl bg-card-surface border border-card-border text-title hover:bg-sidebar-hover flex items-center justify-center transition-all cursor-pointer"
-                title={theme === 'light' ? '切换至暗色模式' : '切换至亮色模式'}
+                className="p-2 rounded-xl border border-card-border bg-card-surface hover:bg-sidebar-hover text-text-sec hover:text-title transition-colors cursor-pointer shadow-xs"
+                title={theme === 'dark' ? '切换为亮色模式' : '切换为暗色模式'}
               >
-                {theme === 'light' ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
+                {theme === 'dark' ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-slate-600" />}
               </button>
             )}
 
-            {/* Return to Portal Button next to Theme Toggle */}
-            <a
-              href="/"
-              className="px-4 py-2 rounded-xl bg-card-surface border border-card-border hover:bg-sidebar-hover text-text-sec hover:text-title flex items-center gap-1.5 transition-all text-sm font-semibold cursor-pointer shrink-0"
-              title="返回门户"
-            >
-              <Home className="w-4 h-4" />
-              <span>返回门户</span>
-            </a>
-
-            {/* Hover details user status badge */}
-            <div className="relative group/user">
-              <div className="px-4 py-2 rounded-xl bg-card-surface border border-card-border flex items-center gap-3 transition-all hover:bg-sidebar-hover cursor-default">
-                <div className="relative flex items-center justify-center">
-                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 shadow-emerald-400/50 animate-pulse" />
-                  <span className="absolute inline-flex h-full w-full rounded-full opacity-75 animate-ping bg-emerald-400" />
-                </div>
-                <div className="flex items-center gap-2">
-                  <User className="w-4 h-4 text-text-sec" />
-                  <span className="text-sm font-semibold text-title">
-                    {userInfo?.name || userId}
-                  </span>
-                </div>
+            {/* Current User Info */}
+            <div className="flex items-center gap-2 pl-3 border-l border-card-border">
+              <div className="w-8 h-8 rounded-full bg-zpje-accent/10 border border-zpje-accent/20 flex items-center justify-center text-zpje-accent font-bold text-xs">
+                {userInfo?.name ? userInfo.name.charAt(0) : <User className="w-4 h-4" />}
               </div>
-
-              {/* Hover Popover Detail Card */}
-              {userInfo && (
-                <div className="absolute right-0 top-full mt-2 w-72 bg-card-surface border border-card-border rounded-2xl shadow-xl p-4 text-text-main opacity-0 invisible group-hover/user:opacity-100 group-hover/user:visible transition-all duration-200 z-50">
-                  <div className="flex flex-col gap-3">
-                    <div className="border-b border-card-border pb-2 flex items-center gap-2.5">
-                      <div className="w-9 h-9 rounded-full bg-zpje-brand/10 text-zpje-brand flex items-center justify-center font-bold text-sm">
-                        {userInfo.name.slice(-2)}
-                      </div>
-                      <div>
-                        <h4 className="font-bold text-title text-sm">{userInfo.name}</h4>
-                        <span className="text-xs text-text-sec font-mono">@{userInfo.loginName}</span>
-                      </div>
-                    </div>
-
-                    <div className="flex flex-col gap-2 text-sm">
-                      <div className="flex items-start justify-between gap-2">
-                        <span className="text-text-sec shrink-0">所属单位:</span>
-                        <span className="text-title text-right font-medium">{userInfo.unitName}</span>
-                      </div>
-                      <div className="flex items-start justify-between gap-2">
-                        <span className="text-text-sec shrink-0">所属部门:</span>
-                        <span className="text-title text-right font-medium">{userInfo.deptName}</span>
-                      </div>
-                      <div className="flex items-start justify-between gap-2">
-                        <span className="text-text-sec shrink-0">权限角色:</span>
-                        <span className="px-2 py-0.5 rounded-full text-xs font-bold border bg-red-500/10 text-red-500 border-red-500/20">
-                          管理员
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
+              <div className="hidden sm:flex flex-col text-left">
+                <span className="text-xs font-bold text-title leading-none">{userInfo?.name || userId}</span>
+                <span className="text-[10px] text-text-sec leading-none mt-1">{userInfo?.deptName || '系统管理员'}</span>
+              </div>
+              <button
+                onClick={handleLogout}
+                disabled={isLoggingOut}
+                className="ml-2 p-1.5 rounded-lg text-text-sec hover:text-red-500 hover:bg-red-500/10 transition-colors cursor-pointer"
+                title="登出账号"
+              >
+                <LogOut className="w-4 h-4" />
+              </button>
             </div>
-
-            {/* Logout button */}
-            <button
-              onClick={handleLogout}
-              disabled={isLoggingOut}
-              className="px-4 py-2 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-500 border border-red-500/20 flex items-center gap-2 transition-all text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
-              title="退出登录"
-            >
-              <LogOut className="w-4 h-4" />
-              <span>{isLoggingOut ? '注销中...' : '退出'}</span>
-            </button>
           </div>
         </header>
 
-        {/* Scrollable Content Workspace */}
-        <div className="flex-1 overflow-y-auto w-full px-6 md:px-10 py-8 flex flex-col gap-8 max-w-[1800px]">
-
-          {/* Tab 1: Apps Management */}
+        {/* Tab Content */}
+        <div className="p-6 flex-1 flex flex-col gap-6 max-w-7xl w-full mx-auto">
+          {/* ========================================================================= */}
+          {/* Tab 1: 应用管理中心 */}
+          {/* ========================================================================= */}
           {activeTab === 'apps' && (
-            <>
-              <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-6 border-b border-card-border pb-6 shrink-0">
+            <div className="flex flex-col gap-6">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
-                  <h1 className="text-2xl font-bold tracking-tight text-title">应用管理中心</h1>
-                  <p className="text-sm text-text-sec mt-1">控制应用显隐及分发策略，支持配置维护模式与精细化部门/角色的可见性隔离。</p>
+                  <h2 className="text-base font-bold text-title">已发布数字化应用 ({apps.length})</h2>
+                  <p className="text-xs text-text-sec mt-0.5">
+                    维护全司单点登录安全网关应用、主题配色及 RBAC 可见性隔离规则
+                  </p>
                 </div>
-
                 <button
                   onClick={openAddModal}
-                  className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-zpje-accent text-white hover:opacity-90 transition-all text-sm font-bold shadow-sm cursor-pointer shrink-0"
+                  className="px-4 py-2 rounded-xl bg-zpje-accent text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-md shadow-zpje-accent/20 hover:opacity-90 transition-all cursor-pointer"
                 >
                   <Plus className="w-4 h-4" />
                   <span>新增应用</span>
                 </button>
               </div>
 
-              <div className="bg-card-surface rounded-lg border border-card-border overflow-hidden shadow-sm transition-colors duration-200">
-                <table className="w-full text-left border-collapse text-sm">
-                  <thead>
-                    <tr className="bg-sidebar-hover/40 border-b border-card-border text-text-sec font-medium">
-                      <th className="p-4 w-16 text-center">排序</th>
-                      <th className="p-4">应用名称 / 键标识</th>
-                      <th className="p-4">所属部门</th>
-                      <th className="p-4">入口 URL</th>
-                      <th className="p-4">可见范围 / 权限策略</th>
-                      <th className="p-4 w-32 text-center">状态</th>
-                      <th className="p-4 w-28 text-right">操作</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {apps.length > 0 ? (
-                      apps.map((app) => (
-                        <tr key={app.id} className="border-b border-card-border hover:bg-sidebar-hover/20 transition-colors">
-                          <td className="p-4 text-center font-mono text-text-sec/80">{app.sortOrder}</td>
-                          <td className="p-4">
-                            <div className="flex items-center gap-2.5">
-                              <div 
-                                className="p-2 rounded flex items-center justify-center w-8 h-8 shrink-0 font-semibold"
+              {/* Apps Table */}
+              <div className="bg-card-surface border border-card-border rounded-2xl overflow-hidden shadow-sm">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse text-xs">
+                    <thead>
+                      <tr className="bg-sidebar-hover/40 border-b border-card-border text-text-sec font-semibold">
+                        <th className="p-3.5 w-16 text-center">图标</th>
+                        <th className="p-3.5">应用名称 / 唯一键</th>
+                        <th className="p-3.5">所属单位与主部门</th>
+                        <th className="p-3.5">访问权限策略</th>
+                        <th className="p-3.5 w-24 text-center">运行状态</th>
+                        <th className="p-3.5 w-20 text-center">排序</th>
+                        <th className="p-3.5 w-28 text-right">操作</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-card-border">
+                      {apps.map((app) => {
+                        const hex = getAppHexColor(app.color, app.key);
+                        return (
+                          <tr key={app.id} className="hover:bg-sidebar-hover/20 transition-colors">
+                            <td className="p-3.5 text-center">
+                              <div
+                                className="w-9 h-9 rounded-xl flex items-center justify-center mx-auto border"
                                 style={{
-                                  backgroundColor: getRgba(getAppHexColor(app.color, app.key), 0.15),
-                                  color: getAppHexColor(app.color, app.key)
+                                  backgroundColor: getRgba(hex, 0.12),
+                                  borderColor: getRgba(hex, 0.3),
+                                  color: hex,
                                 }}
                               >
-                                {renderIcon(app.icon)}
+                                {renderIcon(app.icon, 'w-4 h-4')}
                               </div>
-                              <div>
-                                <div className="font-semibold text-title">{app.name}</div>
-                                <div className="text-xs font-mono text-text-sec">{app.key}</div>
+                            </td>
+                            <td className="p-3.5">
+                              <div className="font-bold text-title text-sm">{app.name}</div>
+                              <div className="text-[10px] text-text-sec font-mono mt-0.5">@{app.key}</div>
+                              <div className="text-[10px] text-text-sec/80 truncate max-w-xs mt-0.5" title={app.url}>
+                                {app.url}
                               </div>
-                            </div>
-                          </td>
-                          <td className="p-4 text-text-sec font-medium">
-                            {app.mainDept?.name || <span className="text-text-sec/50 italic">通用应用</span>}
-                          </td>
-                          <td className="p-4">
-                            <div className="truncate max-w-[240px] text-text-sec font-mono text-xs">{app.url}</div>
-                          </td>
-                          <td className="p-4">
-                            <div className="flex flex-col gap-1.5">
+                            </td>
+                            <td className="p-3.5">
+                              <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] bg-sidebar-hover text-text-sec border border-card-border">
+                                {app.mainDept?.name || '全司共享'}
+                              </span>
+                            </td>
+                            <td className="p-3.5">
                               {app.visibleToAll ? (
-                                <span className="inline-flex items-center gap-1.5 text-xs text-emerald-600 font-semibold">
-                                  <Eye className="w-3.5 h-3.5" />
-                                  所有人可见
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-600 border border-emerald-500/20 dark:text-emerald-400">
+                                  <Eye className="w-3 h-3" /> 全员免检可见
                                 </span>
                               ) : (
-                                <div className="flex flex-col gap-1">
-                                  <span className="inline-flex items-center gap-1.5 text-xs text-amber-600 font-semibold">
-                                    <EyeOff className="w-3.5 h-3.5" />
-                                    权限受限
+                                <div className="flex flex-wrap items-center gap-1">
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/10 text-amber-600 border border-amber-500/20 dark:text-amber-400">
+                                    <Shield className="w-3 h-3" /> 指定范围
                                   </span>
-                                  <span className="text-[10px] text-text-sec block max-w-xs truncate">
-                                    {`关联角色数: ${app.roleIds?.length || 0} | 关联部门数: ${app.deptIds?.length || 0}`}
-                                  </span>
+                                  {app.roleIds && app.roleIds.length > 0 && (
+                                    <span className="text-[10px] text-text-sec">
+                                      {app.roleIds.length} 个角色
+                                    </span>
+                                  )}
+                                  {app.deptIds && app.deptIds.length > 0 && (
+                                    <span className="text-[10px] text-text-sec">
+                                      · {app.deptIds.length} 个部门
+                                    </span>
+                                  )}
                                 </div>
                               )}
-                            </div>
-                          </td>
-                          <td className="p-4 text-center">
-                            <div className="flex flex-col items-center gap-1.5">
+                            </td>
+                            <td className="p-3.5 text-center">
                               {app.isMaintenance ? (
-                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-500/10 text-amber-600 border border-amber-500/20 text-xs font-medium">
-                                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                                <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-500/10 text-red-500 border border-red-500/20">
                                   维护中
                                 </span>
                               ) : (
-                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 border border-emerald-500/20 text-xs font-medium">
-                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                                  正常
+                                <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-600 border border-emerald-500/20 dark:text-emerald-400">
+                                  正常运行
                                 </span>
                               )}
-                            </div>
-                          </td>
-                          <td className="p-4 text-right">
-                            <div className="flex items-center justify-end gap-1">
-                              <button
-                                onClick={() => openEditModal(app)}
-                                className="p-1.5 rounded hover:bg-sidebar-hover text-text-sec hover:text-title transition-colors"
-                                title="编辑"
-                              >
-                                <Edit className="w-4 h-4" />
-                              </button>
-                              <button
-                                onClick={() => {
-                                  if (window.confirm(`确定要删除应用 “${app.name}” 吗？`)) {
-                                    handleDelete(app.id);
-                                  }
-                                }}
-                                disabled={isDeleting === app.id}
-                                className="p-1.5 rounded hover:bg-red-500/10 text-red-500 hover:text-red-600 transition-colors disabled:opacity-50"
-                                title="删除"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))
-                    ) : (
-                      <tr>
-                        <td colSpan={6} className="p-12 text-center text-text-sec italic bg-card-surface">
-                          暂无注册应用，请点击“新增应用”开始配置。
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
+                            </td>
+                            <td className="p-3.5 text-center font-mono text-text-sec font-bold">
+                              {app.sortOrder}
+                            </td>
+                            <td className="p-3.5 text-right">
+                              <div className="flex items-center justify-end gap-1.5">
+                                <button
+                                  onClick={() => openEditModal(app)}
+                                  className="p-1.5 rounded-lg border border-input-border bg-card-surface hover:bg-sidebar-hover text-text-sec hover:text-title transition-colors cursor-pointer"
+                                  title="编辑应用"
+                                >
+                                  <Edit className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  onClick={() => handleDelete(app.id)}
+                                  disabled={isDeleting === app.id}
+                                  className="p-1.5 rounded-lg border border-red-500/20 bg-red-500/5 hover:bg-red-500/10 text-red-500 transition-colors cursor-pointer disabled:opacity-50"
+                                  title="删除应用"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               </div>
-            </>
+            </div>
           )}
 
-          {/* Tab 2: Widget Configuration */}
+          {/* ========================================================================= */}
+          {/* Tab 2: Widget 卡片配置 */}
+          {/* ========================================================================= */}
           {activeTab === 'widgets' && (
-            <>
-              <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-6 border-b border-card-border pb-6 shrink-0">
+            <div className="flex flex-col gap-6">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
-                  <h1 className="text-2xl font-bold tracking-tight text-title">数据看板 Widget 配置</h1>
-                  <p className="text-sm text-text-sec mt-1">在门户首页引入子系统的微缩视图，支持网页 iframe 嵌入或对接标准 API 异步渲染指标格。</p>
+                  <h2 className="text-base font-bold text-title">首页 Widget 卡片配置 ({widgets.length})</h2>
+                  <p className="text-xs text-text-sec mt-0.5">
+                    配置首页快捷微应用卡片与数据图表插件
+                  </p>
                 </div>
-
                 <button
                   onClick={openAddWidgetModal}
-                  className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-zpje-accent text-white hover:opacity-90 transition-all text-sm font-bold shadow-sm cursor-pointer shrink-0"
+                  className="px-4 py-2 rounded-xl bg-zpje-accent text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-md shadow-zpje-accent/20 hover:opacity-90 transition-all cursor-pointer"
                 >
                   <Plus className="w-4 h-4" />
                   <span>新增 Widget</span>
                 </button>
               </div>
 
-              <div className="bg-card-surface rounded-lg border border-card-border overflow-hidden shadow-sm transition-colors duration-200">
-                <table className="w-full text-left border-collapse text-sm">
-                  <thead>
-                    <tr className="bg-sidebar-hover/40 border-b border-card-border text-text-sec font-medium">
-                      <th className="p-4 w-16 text-center">排序</th>
-                      <th className="p-4">看板标题 / 类型</th>
-                      <th className="p-4">数据源 URL (API 端点 / 网页)</th>
-                      <th className="p-4">网格跨度 (列数)</th>
-                      <th className="p-4">关联子应用</th>
-                      <th className="p-4 w-28 text-right">操作</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {widgets.length > 0 ? (
-                      widgets.map((w) => (
-                        <tr key={w.id} className="border-b border-card-border hover:bg-sidebar-hover/20 transition-colors">
-                          <td className="p-4 text-center font-mono text-text-sec/80">{w.sortOrder}</td>
-                          <td className="p-4">
-                            <div className="font-semibold text-title">{w.title}</div>
-                            <div className="text-xs text-text-sec font-mono mt-0.5">
-                              {w.type === 'api' ? 'API 异步渲染格' : '网页 Iframe'}
-                            </div>
-                          </td>
-                          <td className="p-4">
-                            <div className="truncate max-w-[360px] text-text-sec font-mono text-xs" title={w.url}>
-                              {w.url}
-                            </div>
-                          </td>
-                          <td className="p-4 font-mono text-xs">
-                            {w.widthClass === 'col-span-3' ? 'col-span-3 (整行)' :
-                              w.widthClass === 'col-span-2' ? 'col-span-2 (2/3 行)' : 'col-span-1 (1/3 行)'}
-                          </td>
-                          <td className="p-4 text-text-sec font-medium text-xs">
-                            {w.appName || <span className="italic text-text-sec/60">未绑定</span>}
-                          </td>
-                          <td className="p-4 text-right">
-                            <div className="flex items-center justify-end gap-1">
-                              <button
-                                onClick={() => openEditWidgetModal(w)}
-                                className="p-1.5 rounded hover:bg-sidebar-hover text-text-sec hover:text-title transition-colors"
-                                title="编辑 Widget"
-                              >
-                                <Edit className="w-4 h-4" />
-                              </button>
-                              <button
-                                onClick={() => {
-                                  if (window.confirm(`确定要删除看板 “${w.title}” 吗？`)) {
-                                    handleWidgetDelete(w.id);
-                                  }
-                                }}
-                                disabled={isDeletingWidget === w.id}
-                                className="p-1.5 rounded hover:bg-red-500/10 text-red-500 hover:text-red-600 transition-colors disabled:opacity-50"
-                                title="删除 Widget"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))
-                    ) : (
-                      <tr>
-                        <td colSpan={6} className="p-12 text-center text-text-sec italic bg-card-surface">
-                          暂无配置的 Widget 看板，请点击“新增 Widget”开始创建。
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {widgets.map((w) => (
+                  <div
+                    key={w.id}
+                    className="p-5 rounded-2xl border border-card-border bg-card-surface shadow-sm flex flex-col justify-between gap-4 hover:border-zpje-accent transition-all"
+                  >
+                    <div>
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-bold text-title text-sm">{w.title}</span>
+                        <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-sidebar-hover text-text-sec border border-card-border">
+                          {w.type}
+                        </span>
+                      </div>
+                      <div className="text-[10px] text-text-sec font-mono mt-2 truncate" title={w.url}>
+                        {w.url}
+                      </div>
+                      <div className="flex items-center gap-2 mt-3 text-xs text-text-sec">
+                        <span>关联应用: {w.appName || '无'}</span>
+                        <span>·</span>
+                        <span className="font-mono">排序: {w.sortOrder}</span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-end gap-2 pt-3 border-t border-card-border">
+                      <button
+                        onClick={() => openEditWidgetModal(w)}
+                        className="px-2.5 py-1 text-xs font-semibold rounded-lg border border-input-border hover:bg-sidebar-hover text-title transition-colors cursor-pointer"
+                      >
+                        编辑
+                      </button>
+                      <button
+                        onClick={() => handleDeleteWidget(w.id)}
+                        disabled={isDeletingWidget === w.id}
+                        className="px-2.5 py-1 text-xs font-semibold rounded-lg border border-red-500/20 bg-red-500/5 hover:bg-red-500/10 text-red-500 transition-colors cursor-pointer disabled:opacity-50"
+                      >
+                        删除
+                      </button>
+                    </div>
+                  </div>
+                ))}
               </div>
-            </>
+            </div>
           )}
 
-          {/* Tab 3: Permission & Role Allocation (SYS_ADMIN or OPS_ADMIN) */}
+          {/* ========================================================================= */}
+          {/* Tab 3: 权限与角色分配 (Master-Detail 重构架构) */}
+          {/* ========================================================================= */}
           {activeTab === 'members' && (isSystemAdmin || isOpsAdmin) && (
-            <>
+            <div className="flex flex-col gap-6">
               {/* Permission & Role Sub-tabs Header */}
               <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 border-b border-card-border pb-3 shrink-0">
                 <div className="flex border-b-2 border-transparent gap-6">
                   <button
                     onClick={() => setPermissionSubTab('roles')}
-                    className={`pb-2 text-sm font-bold border-b-2 transition-all cursor-pointer ${permissionSubTab === 'roles'
-                      ? 'border-zpje-accent text-zpje-accent'
-                      : 'border-transparent text-text-sec hover:text-title'
-                      }`}
+                    className={`pb-2 text-sm font-bold border-b-2 transition-all cursor-pointer ${
+                      permissionSubTab === 'roles'
+                        ? 'border-zpje-accent text-zpje-accent'
+                        : 'border-transparent text-text-sec hover:text-title'
+                    }`}
                   >
-                    业务角色分配
+                    业务角色分配 (前台应用可见性)
                   </button>
                   {isSystemAdmin && (
                     <button
                       onClick={() => setPermissionSubTab('admins')}
-                      className={`pb-2 text-sm font-bold border-b-2 transition-all cursor-pointer ${permissionSubTab === 'admins'
-                        ? 'border-zpje-accent text-zpje-accent'
-                        : 'border-transparent text-text-sec hover:text-title'
-                        }`}
+                      className={`pb-2 text-sm font-bold border-b-2 transition-all cursor-pointer ${
+                        permissionSubTab === 'admins'
+                          ? 'border-zpje-accent text-zpje-accent'
+                          : 'border-transparent text-text-sec hover:text-title'
+                      }`}
                     >
-                      管理员特权分配
+                      管理员特权分配 (后台管理授权)
                     </button>
                   )}
                 </div>
 
                 <p className="text-xs text-text-sec">
                   {permissionSubTab === 'roles'
-                    ? '支持为在职员工自由配置多个业务角色（普通员工、高级操作员、领导、系统管理员），用于精细化控制应用权限。'
-                    : '管理后台特权分级授权（系统管理员、运维管理员、部门管理员），仅系统管理员拥有此权限。'}
+                    ? '控制员工前台可见应用组（如领导、高级操作员、管道质检组等）。普通员工为默认底色无需建组。'
+                    : '管理后台特权分级（系统管理员、运维管理员、部门管理员），仅系统管理员可配置。'}
                 </p>
               </div>
 
               {permissionSubTab === 'roles' ? (
-                // Business Roles Allocation Content
-                <div className="flex flex-col gap-6">
-                  {/* Top 4 Role Summary Cards */}
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                    {roles.map(r => (
-                      <div
-                        key={r.id}
-                        onClick={() => setRoleFilter(roleFilter === r.key ? 'all' : r.key)}
-                        className={`p-4 rounded-2xl border bg-card-surface flex flex-col gap-2 transition-all cursor-pointer shadow-sm hover:border-zpje-accent ${roleFilter === r.key ? 'ring-2 ring-zpje-accent border-zpje-accent' : 'border-card-border'}`}
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${getRoleBadgeStyle(r.key)}`}>
-                            {r.name}
-                          </span>
-                          <span className="text-[10px] text-text-sec font-mono">@{r.key}</span>
-                        </div>
-                        <div className="flex items-baseline gap-1 mt-1">
-                          <span className="text-2xl font-extrabold text-title font-mono">{roleCounts[r.key] || 0}</span>
-                          <span className="text-xs text-text-sec">人</span>
-                        </div>
+                // ----------------------------------------------------
+                // Master-Detail 左右分栏角色中心
+                // ----------------------------------------------------
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+                  {/* Left Col (Master): 角色列表侧栏 */}
+                  <div className="lg:col-span-4 bg-card-surface border border-card-border rounded-2xl p-4 flex flex-col gap-3 shadow-sm">
+                    <div className="flex items-center justify-between pb-2 border-b border-card-border">
+                      <div className="flex items-center gap-2">
+                        <Users className="w-4 h-4 text-zpje-accent" />
+                        <span className="font-bold text-title text-sm">业务角色</span>
+                        <span className="text-[10px] text-text-sec font-mono">({rolesList.length})</span>
                       </div>
-                    ))}
+                      <button
+                        onClick={() => {
+                          setNewRoleKey('');
+                          setNewRoleName('');
+                          setNewRoleDesc('');
+                          setNewRoleError('');
+                          setIsCreateRoleModalOpen(true);
+                        }}
+                        className="px-2.5 py-1 rounded-lg bg-zpje-accent/10 border border-zpje-accent/30 text-zpje-accent text-xs font-bold hover:bg-zpje-accent hover:text-white transition-all flex items-center gap-1 cursor-pointer"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>新建角色</span>
+                      </button>
+                    </div>
+
+                    {/* Role Search Box */}
+                    <div className="relative">
+                      <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-text-sec" />
+                      <input
+                        type="text"
+                        placeholder="搜索角色名称或标识..."
+                        value={roleSearchTerm}
+                        onChange={(e) => setRoleSearchTerm(e.target.value)}
+                        className="w-full pl-8 pr-3 py-1.5 rounded-xl bg-canvas border border-input-border text-title text-xs focus:outline-none focus:ring-1 focus:ring-zpje-accent"
+                      />
+                    </div>
+
+                    {/* Roles Card List */}
+                    <div className="flex flex-col gap-2 max-h-[600px] overflow-y-auto pr-0.5">
+                      {filteredRoles.length > 0 ? (
+                        filteredRoles.map((role) => {
+                          const isActive = activeRole?.id === role.id;
+                          const { icon, badge } = getRoleIconAndBadge(role.key);
+                          return (
+                            <div
+                              key={role.id}
+                              onClick={() => setActiveRoleId(role.id)}
+                              className={`p-3.5 rounded-xl border transition-all cursor-pointer flex flex-col gap-1.5 ${
+                                isActive
+                                  ? 'bg-zpje-accent/10 border-zpje-accent ring-1 ring-zpje-accent shadow-xs'
+                                  : 'bg-canvas border-card-border hover:border-zpje-accent/50 hover:bg-sidebar-hover/40'
+                              }`}
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <span className="text-base shrink-0">{icon}</span>
+                                  <span className="font-bold text-title text-xs truncate">{role.name}</span>
+                                  <span className="text-[10px] text-text-sec font-mono truncate">@{role.key}</span>
+                                </div>
+                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold border shrink-0 ${badge}`}>
+                                  {role.memberCount || 0} 人
+                                </span>
+                              </div>
+                              {role.description && (
+                                <p className="text-[11px] text-text-sec line-clamp-2 leading-relaxed">
+                                  {role.description}
+                                </p>
+                              )}
+                            </div>
+                          );
+                        })
+                      ) : (
+                        <div className="text-center py-8 text-xs text-text-sec italic">
+                          未找到匹配的角色
+                        </div>
+                      )}
+                    </div>
                   </div>
 
-                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start w-full">
-                    {/* Left Col: Search and Assign Roles */}
-                    <div className="bg-card-surface border border-card-border p-5 rounded-2xl flex flex-col gap-4 shadow-sm">
-                      <h4 className="font-bold text-title text-sm border-b border-card-border pb-3 flex items-center gap-2">
-                        <Users className="w-4 h-4 text-zpje-brand" />
-                        检索员工并分配角色
-                      </h4>
-
-                      <div className="flex flex-col gap-3">
-                        <div className="relative">
-                          <Search className="absolute left-3 top-2.5 h-4 w-4 text-text-sec" />
-                          <input
-                            type="text"
-                            placeholder="输入姓名、工号或账号搜索..."
-                            value={roleMemberSearch}
-                            onChange={(e) => {
-                              setRoleMemberSearch(e.target.value);
-                              triggerRoleMemberSearch(e.target.value);
-                            }}
-                            className="w-full pl-9 pr-4 py-2 rounded-xl bg-canvas border border-input-border text-title text-xs focus:outline-none focus:ring-1 focus:ring-title"
-                          />
-                        </div>
-
-                        {roleMemberSearchLoading ? (
-                          <div className="text-center py-6 text-xs text-text-sec animate-pulse">正在查找在职员工...</div>
-                        ) : roleMemberSearchResults.length > 0 ? (
-                          <div className="flex flex-col gap-3 max-h-96 overflow-y-auto border border-card-border rounded-xl p-2.5 bg-sidebar-hover/10">
-                            {roleMemberSearchResults.map(m => {
-                              const memberRoleIds = (m.roles || []).map((r: any) => r.id);
-                              return (
-                                <div key={m.id} className="p-3 rounded-xl bg-card-surface border border-card-border flex flex-col gap-2.5 shadow-xs">
-                                  <div className="flex items-center justify-between gap-2">
-                                    <div className="truncate min-w-0">
-                                      <div className="font-bold text-title text-xs">{m.name}</div>
-                                      <div className="text-[10px] text-text-sec font-mono">@{m.loginName}</div>
-                                    </div>
-                                    <span className="text-[10px] text-text-sec/80 bg-sidebar-hover px-2 py-0.5 rounded truncate max-w-[120px]">
-                                      {m.deptName}
-                                    </span>
-                                  </div>
-
-                                  {/* Multi-role selection badges */}
-                                  <div className="flex flex-wrap gap-1.5 pt-1 border-t border-card-border/60">
-                                    {roles.map(r => {
-                                      const isSelected = memberRoleIds.includes(r.id);
-                                      return (
-                                        <button
-                                          key={r.id}
-                                          type="button"
-                                          onClick={() => handleToggleMemberRole(m.id, r.id, m.roles || [])}
-                                          className={`px-2 py-1 rounded-lg text-[10px] font-bold border transition-all flex items-center gap-1 cursor-pointer ${
-                                            isSelected
-                                              ? `${getRoleBadgeStyle(r.key)} ring-1 ring-current shadow-xs`
-                                              : 'bg-canvas text-text-sec/70 border-input-border hover:text-title hover:border-card-border'
-                                          }`}
-                                          title={isSelected ? `点击移除 ${r.name} 角色` : `点击赋予 ${r.name} 角色`}
-                                        >
-                                          {isSelected ? <Check className="w-3 h-3" /> : <Plus className="w-3 h-3 opacity-40" />}
-                                          <span>{r.name}</span>
-                                        </button>
-                                      );
-                                    })}
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        ) : roleMemberSearch.trim() !== '' ? (
-                          <div className="text-center py-6 text-xs text-text-sec italic">未找到匹配的在职员工</div>
-                        ) : (
-                          <div className="text-center py-6 text-[10px] text-text-sec italic">在上方输入字符即可检索 6000+ OA 关联员工并进行角色分配</div>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Right Col: Assigned Members Table */}
-                    <div className="lg:col-span-2 bg-card-surface border border-card-border rounded-2xl overflow-hidden shadow-sm flex flex-col justify-between">
+                  {/* Right Col (Detail): 选定角色的成员工作区 */}
+                  <div className="lg:col-span-8 bg-card-surface border border-card-border rounded-2xl overflow-hidden shadow-sm flex flex-col">
+                    {/* Header Banner */}
+                    <div className="p-4 border-b border-card-border bg-sidebar-hover/20 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                       <div>
-                        <div className="px-5 py-4 border-b border-card-border bg-sidebar-hover/20 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                          <h4 className="font-bold text-title text-sm flex items-center gap-2">
-                            <span>已分配角色员工列表</span>
-                            <span className="text-xs font-mono text-text-sec bg-sidebar-hover px-2 py-0.5 rounded-full">
-                              {roleAssignedMembers.length} 人
-                            </span>
-                          </h4>
+                        <div className="flex items-center gap-2">
+                          <span className="text-lg">{activeRole ? getRoleIconAndBadge(activeRole.key).icon : '🌟'}</span>
+                          <h3 className="font-extrabold text-title text-sm">
+                            【{activeRole?.name} ({activeRole?.key})】成员列表
+                          </h3>
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-zpje-accent/10 text-zpje-accent border border-zpje-accent/20">
+                            共 {selectedRoleMembers.length} 人
+                          </span>
+                        </div>
+                        <p className="text-xs text-text-sec mt-1">
+                          {activeRole?.description || '暂无业务职责描述。该角色绑定的员工在前台将解锁对应业务应用的访问权限。'}
+                        </p>
+                      </div>
 
-                          {/* Filter by role & search */}
-                          <div className="flex items-center gap-2">
-                            <select
-                              value={roleFilter}
-                              onChange={(e) => setRoleFilter(e.target.value)}
-                              className="px-2.5 py-1.5 rounded-lg border border-input-border bg-card-surface text-title text-xs font-semibold focus:outline-none cursor-pointer"
+                      <div className="flex flex-wrap items-center gap-2 shrink-0">
+                        {activeRole && (
+                          <>
+                            <button
+                              onClick={() => openEditRoleModal(activeRole)}
+                              className="px-3 py-2 rounded-xl border border-input-border bg-card-surface text-title hover:bg-sidebar-hover text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
+                              title="编辑角色信息 (标识 / 名称 / 描述)"
                             >
-                              <option value="all">所有角色</option>
-                              {roles.map(r => (
-                                <option key={r.id} value={r.key}>{r.name}</option>
-                              ))}
-                            </select>
+                              <Edit className="w-3.5 h-3.5 text-text-sec" />
+                              <span>编辑角色</span>
+                            </button>
 
-                            <input
-                              type="text"
-                              placeholder="在列表中筛选..."
-                              value={roleSearchTerm}
-                              onChange={(e) => setRoleSearchTerm(e.target.value)}
-                              className="px-2.5 py-1.5 rounded-lg border border-input-border bg-card-surface text-title text-xs focus:outline-none w-32 sm:w-40"
-                            />
-                          </div>
-                        </div>
+                            <button
+                              onClick={() => handleDeleteRole(activeRole)}
+                              disabled={isDeletingRole}
+                              className="px-3 py-2 rounded-xl border border-red-500/20 bg-red-500/5 text-red-500 hover:bg-red-500/10 text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+                              title="删除此业务角色"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                              <span>删除角色</span>
+                            </button>
+                          </>
+                        )}
 
-                        <div className="overflow-x-auto">
-                          <table className="w-full text-left border-collapse text-xs">
-                            <thead>
-                              <tr className="bg-sidebar-hover/40 border-b border-card-border text-text-sec font-semibold">
-                                <th className="p-3">姓名 / 账号</th>
-                                <th className="p-3">所属单位与部门</th>
-                                <th className="p-3">已分配业务角色 (可点击快速移除)</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {roleAssignedMembers
-                                .filter(m => {
-                                  const matchesFilter = roleFilter === 'all' || m.roles.some(r => r.key === roleFilter);
-                                  const matchesSearch = !roleSearchTerm.trim() ||
-                                    m.name.toLowerCase().includes(roleSearchTerm.toLowerCase()) ||
-                                    m.loginName.toLowerCase().includes(roleSearchTerm.toLowerCase()) ||
-                                    m.deptName.toLowerCase().includes(roleSearchTerm.toLowerCase());
-                                  return matchesFilter && matchesSearch;
-                                })
-                                .length > 0 ? (
-                                roleAssignedMembers
-                                  .filter(m => {
-                                    const matchesFilter = roleFilter === 'all' || m.roles.some(r => r.key === roleFilter);
-                                    const matchesSearch = !roleSearchTerm.trim() ||
-                                      m.name.toLowerCase().includes(roleSearchTerm.toLowerCase()) ||
-                                      m.loginName.toLowerCase().includes(roleSearchTerm.toLowerCase()) ||
-                                      m.deptName.toLowerCase().includes(roleSearchTerm.toLowerCase());
-                                    return matchesFilter && matchesSearch;
-                                  })
-                                  .map((member) => (
-                                    <tr key={member.id} className="border-b border-card-border hover:bg-sidebar-hover/10 transition-colors">
-                                      <td className="p-3">
-                                        <div className="font-bold text-title">{member.name}</div>
-                                        <div className="text-[10px] font-mono text-text-sec">@{member.loginName}</div>
-                                      </td>
-                                      <td className="p-3 text-text-sec">
-                                        <div>{member.unitName}</div>
-                                        <div className="text-[10px] mt-0.5">{member.deptName}</div>
-                                      </td>
-                                      <td className="p-3">
-                                        <div className="flex flex-wrap gap-1.5">
-                                          {member.roles.map(r => (
-                                            <span
-                                              key={r.id}
-                                              className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold border ${getRoleBadgeStyle(r.key)}`}
-                                            >
-                                              <span>{r.name}</span>
-                                              <button
-                                                type="button"
-                                                onClick={() => handleToggleMemberRole(member.id, r.id, member.roles)}
-                                                className="hover:opacity-70 cursor-pointer ml-0.5"
-                                                title={`移除 ${r.name} 角色`}
-                                              >
-                                                <X className="w-3 h-3" />
-                                              </button>
-                                            </span>
-                                          ))}
-                                        </div>
-                                      </td>
-                                    </tr>
-                                  ))
-                              ) : (
-                                <tr>
-                                  <td colSpan={3} className="p-12 text-center text-text-sec italic bg-card-surface">
-                                    暂无符合条件的已授权角色成员。可在左侧搜索在职员工进行快速授权。
-                                  </td>
-                                </tr>
-                              )}
-                            </tbody>
-                          </table>
-                        </div>
+                        <button
+                          onClick={() => setIsAddMemberModalOpen(true)}
+                          disabled={!activeRole}
+                          className="px-3.5 py-2 rounded-xl bg-zpje-accent text-white text-xs font-bold hover:opacity-90 transition-all flex items-center justify-center gap-1.5 shadow-md shadow-zpje-accent/20 cursor-pointer shrink-0 disabled:opacity-50"
+                        >
+                          <UserPlus className="w-4 h-4" />
+                          <span>批量添加成员</span>
+                        </button>
                       </div>
                     </div>
+
+                    {/* Search in Members Table */}
+                    <div className="p-3 border-b border-card-border bg-card-surface flex items-center justify-between gap-4">
+                      <div className="relative flex-1 max-w-sm">
+                        <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-text-sec" />
+                        <input
+                          type="text"
+                          placeholder="过滤当前角色的成员 (姓名/账号/部门)..."
+                          value={roleMemberKeyword}
+                          onChange={(e) => {
+                            setRoleMemberKeyword(e.target.value);
+                            setRoleMembersPage(1);
+                          }}
+                          className="w-full pl-8 pr-3 py-1.5 rounded-xl bg-canvas border border-input-border text-title text-xs focus:outline-none focus:ring-1 focus:ring-zpje-accent"
+                        />
+                      </div>
+                      <span className="text-xs text-text-sec font-mono">
+                        匹配到 {filteredActiveRoleMembers.length} 人
+                      </span>
+                    </div>
+
+                    {/* Members Table */}
+                    <div className="overflow-x-auto min-h-[350px]">
+                      {roleMembersLoading ? (
+                        <div className="text-center py-16 text-xs text-text-sec animate-pulse">
+                          正在加载角色成员列表...
+                        </div>
+                      ) : paginatedRoleMembers.length > 0 ? (
+                        <table className="w-full text-left border-collapse text-xs">
+                          <thead>
+                            <tr className="bg-sidebar-hover/30 border-b border-card-border text-text-sec font-semibold">
+                              <th className="p-3 w-36">员工姓名</th>
+                              <th className="p-3 w-36 font-mono">登录账号 / 工号</th>
+                              <th className="p-3">所属单位与部门</th>
+                              <th className="p-3 w-32 font-mono">加入时间</th>
+                              <th className="p-3 w-24 text-right">操作</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-card-border">
+                            {paginatedRoleMembers.map((member) => (
+                              <tr key={member.id} className="hover:bg-sidebar-hover/20 transition-colors">
+                                <td className="p-3 font-bold text-title">
+                                  <div className="flex items-center gap-2">
+                                    <div className="w-6 h-6 rounded-full bg-sidebar-hover flex items-center justify-center text-[10px] text-text-sec">
+                                      {member.name.charAt(0)}
+                                    </div>
+                                    <span>{member.name}</span>
+                                  </div>
+                                </td>
+                                <td className="p-3 font-mono text-text-sec">
+                                  <div>@{member.loginName}</div>
+                                  {member.code && (
+                                    <div className="text-[10px] text-text-sec/60">{member.code}</div>
+                                  )}
+                                </td>
+                                <td className="p-3 text-text-sec">
+                                  <div className="font-medium text-title">{member.deptName}</div>
+                                  <div className="text-[10px] text-text-sec/70">{member.unitName}</div>
+                                </td>
+                                <td className="p-3 text-text-sec font-mono text-[10px]">
+                                  {member.joinedAt ? new Date(member.joinedAt).toLocaleDateString() : '-'}
+                                </td>
+                                <td className="p-3 text-right">
+                                  <button
+                                    onClick={() => handleRemoveMemberFromRole(member.id, member.name)}
+                                    className="px-2 py-1 rounded text-red-500 hover:bg-red-500/10 font-medium transition-colors cursor-pointer text-xs"
+                                  >
+                                    移除角色
+                                  </button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      ) : (
+                        <div className="text-center py-16 text-xs text-text-sec italic flex flex-col items-center gap-2">
+                          <Users className="w-8 h-8 text-text-sec/40" />
+                          <span>当前角色暂未分配成员</span>
+                          <button
+                            onClick={() => setIsAddMemberModalOpen(true)}
+                            className="mt-1 text-xs text-zpje-accent hover:underline font-bold"
+                          >
+                            立即点击批量添加成员
+                          </button>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Pagination */}
+                    {totalRoleMemberPages > 1 && (
+                      <div className="p-3 border-t border-card-border bg-sidebar-hover/10 flex items-center justify-between text-xs">
+                        <span className="text-text-sec">
+                          显示第 {(roleMembersPage - 1) * roleMembersPerPage + 1} 到{' '}
+                          {Math.min(roleMembersPage * roleMembersPerPage, filteredActiveRoleMembers.length)} 条，共{' '}
+                          {filteredActiveRoleMembers.length} 条
+                        </span>
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            onClick={() => setRoleMembersPage((p) => Math.max(1, p - 1))}
+                            disabled={roleMembersPage === 1}
+                            className="p-1.5 rounded border border-input-border bg-card-surface hover:bg-sidebar-hover disabled:opacity-40 disabled:cursor-not-allowed text-title"
+                          >
+                            <ChevronLeft className="w-3.5 h-3.5" />
+                          </button>
+                          <span className="px-2 font-bold text-title">
+                            {roleMembersPage} / {totalRoleMemberPages}
+                          </span>
+                          <button
+                            onClick={() => setRoleMembersPage((p) => Math.min(totalRoleMemberPages, p + 1))}
+                            disabled={roleMembersPage === totalRoleMemberPages}
+                            className="p-1.5 rounded border border-input-border bg-card-surface hover:bg-sidebar-hover disabled:opacity-40 disabled:cursor-not-allowed text-title"
+                          >
+                            <ChevronRight className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               ) : (
-                // Administrator Privileges Allocation Sub-Tab (Only for SYS_ADMIN)
+                // ----------------------------------------------------
+                // 管理员特权分配 (SYS_ADMIN)
+                // ----------------------------------------------------
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start w-full">
-                  {/* Search Pane */}
                   <div className="bg-card-surface border border-card-border p-5 rounded-2xl flex flex-col gap-4 shadow-sm">
                     <h4 className="font-bold text-title text-sm border-b border-card-border pb-3 flex items-center gap-2">
                       <Shield className="w-4 h-4 text-zpje-brand" />
-                      搜索并添加管理员
+                      检索在职员工并赋予特权
                     </h4>
 
                     <div className="flex flex-col gap-3">
@@ -1569,7 +1735,7 @@ export default function AdminAppRegistry({
                         <Search className="absolute left-3 top-2.5 h-4 w-4 text-text-sec" />
                         <input
                           type="text"
-                          placeholder="输入姓名或登录账号搜索..."
+                          placeholder="输入姓名、工号或账号搜索..."
                           value={memberSearch}
                           onChange={(e) => {
                             setMemberSearch(e.target.value);
@@ -1582,503 +1748,446 @@ export default function AdminAppRegistry({
                       {memberSearchLoading ? (
                         <div className="text-center py-6 text-xs text-text-sec animate-pulse">正在查找在职员工...</div>
                       ) : memberSearchResults.length > 0 ? (
-                        <div className="flex flex-col gap-2 max-h-80 overflow-y-auto border border-card-border rounded-xl p-2 bg-sidebar-hover/10">
-                          {memberSearchResults.map(m => (
-                            <div key={m.id} className="p-2 rounded-lg bg-card-surface border border-card-border flex items-center justify-between gap-3 text-xs">
-                              <div className="truncate min-w-0">
-                                <div className="font-bold text-title">{m.name}</div>
-                                <div className="text-[10px] text-text-sec font-mono">@{m.loginName}</div>
-                                <div className="text-[10px] text-text-sec/80 truncate">{m.unitName} - {m.deptName}</div>
+                        <div className="flex flex-col gap-2 max-h-96 overflow-y-auto border border-card-border rounded-xl p-2.5 bg-sidebar-hover/10">
+                          {memberSearchResults.map((m) => (
+                            <div
+                              key={m.id}
+                              className="p-3 rounded-xl bg-card-surface border border-card-border flex flex-col gap-2 shadow-xs"
+                            >
+                              <div className="flex items-center justify-between">
+                                <div>
+                                  <div className="font-bold text-title text-xs">{m.name}</div>
+                                  <div className="text-[10px] text-text-sec font-mono">@{m.loginName}</div>
+                                </div>
+                                <span className="text-[10px] text-text-sec/80 bg-sidebar-hover px-2 py-0.5 rounded truncate max-w-[120px]">
+                                  {m.department?.name || '无部门'}
+                                </span>
                               </div>
 
-                              <select
-                                onChange={(e) => handleAdminTypeChange(m.id, e.target.value as any, m)}
-                                defaultValue="NONE"
-                                className="px-2 py-1 rounded border border-input-border bg-canvas text-title text-[10px] font-semibold focus:outline-none shrink-0"
-                              >
-                                <option value="NONE">普通员工</option>
-                                <option value="SYS_ADMIN">系统管理员</option>
-                                <option value="OPS_ADMIN">运维管理员</option>
-                                <option value="DEPT_ADMIN">部门管理员</option>
-                              </select>
+                              <div className="flex items-center justify-between pt-2 border-t border-card-border/60">
+                                <span className="text-[10px] text-text-sec font-bold">特权级别:</span>
+                                <select
+                                  value={m.adminType || 'NONE'}
+                                  onChange={(e) => handleUpdateAdminType(m.id, e.target.value)}
+                                  className="px-2 py-1 rounded text-[11px] font-bold border border-input-border bg-card-surface text-title focus:outline-none focus:ring-1 focus:ring-title cursor-pointer"
+                                >
+                                  <option value="NONE">普通成员 (无特权)</option>
+                                  <option value="SYS_ADMIN">系统管理员 (最高特权)</option>
+                                  <option value="OPS_ADMIN">运维管理员 (常规特权)</option>
+                                  <option value="DEPT_ADMIN">部门管理员 (部门维护)</option>
+                                </select>
+                              </div>
                             </div>
                           ))}
                         </div>
                       ) : memberSearch.trim() !== '' ? (
                         <div className="text-center py-6 text-xs text-text-sec italic">未找到匹配的在职员工</div>
                       ) : (
-                        <div className="text-center py-6 text-[10px] text-text-sec italic">在上方输入字符即可检索 6000+ OA 关联员工</div>
+                        <div className="text-center py-6 text-[10px] text-text-sec italic">
+                          在上方输入字符即可检索 6000+ OA 关联员工并进行管理员授权
+                        </div>
                       )}
                     </div>
                   </div>
 
-                  {/* Administrators Table */}
-                  <div className="lg:col-span-2 bg-card-surface border border-card-border rounded-2xl overflow-hidden shadow-sm">
-                    <div className="px-5 py-4 border-b border-card-border bg-sidebar-hover/20 flex items-center justify-between">
-                      <h4 className="font-bold text-title text-sm">当前管理员列表 ({adminMembers.length})</h4>
-                    </div>
+                  {/* Right Col: 特权管理员列表 */}
+                  <div className="lg:col-span-2 bg-card-surface border border-card-border rounded-2xl overflow-hidden shadow-sm flex flex-col justify-between">
+                    <div>
+                      <div className="p-4 border-b border-card-border bg-sidebar-hover/20 flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <Shield className="w-4 h-4 text-zpje-brand" />
+                          <span className="font-bold text-title text-sm">已配置特权管理员清单</span>
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-sidebar-hover text-text-sec border border-card-border">
+                            {adminMembers.length} 人
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-text-sec">管理后台权限即时生效</p>
+                      </div>
 
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left border-collapse text-xs">
+                          <thead>
+                            <tr className="bg-sidebar-hover/40 border-b border-card-border text-text-sec font-semibold font-mono">
+                              <th className="p-3">姓名 (账号)</th>
+                              <th className="p-3">所属单位与部门</th>
+                              <th className="p-3">特权类型</th>
+                              <th className="p-3 w-28 text-right">操作</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {adminMembers.map((m) => (
+                              <tr key={m.id} className="border-b border-card-border hover:bg-sidebar-hover/20 transition-colors">
+                                <td className="p-3">
+                                  <div className="font-bold text-title text-xs">{m.name}</div>
+                                  <div className="text-[10px] font-mono text-text-sec">@{m.loginName}</div>
+                                </td>
+                                <td className="p-3 text-text-sec">
+                                  <div>{m.deptName}</div>
+                                  <div className="text-[10px] text-text-sec/60">{m.unitName}</div>
+                                </td>
+                                <td className="p-3">
+                                  <select
+                                    value={m.adminType}
+                                    onChange={(e) => handleUpdateAdminType(m.id, e.target.value)}
+                                    className="px-2 py-1 rounded text-xs font-bold border border-input-border bg-card-surface text-title focus:outline-none focus:ring-1 focus:ring-title cursor-pointer"
+                                  >
+                                    <option value="SYS_ADMIN">系统管理员</option>
+                                    <option value="OPS_ADMIN">运维管理员</option>
+                                    <option value="DEPT_ADMIN">部门管理员</option>
+                                    <option value="NONE">移除特权 (降为普通成员)</option>
+                                  </select>
+                                </td>
+                                <td className="p-3 text-right">
+                                  <button
+                                    onClick={() => handleUpdateAdminType(m.id, 'NONE')}
+                                    className="px-2.5 py-1 text-xs text-red-500 hover:bg-red-500/10 rounded transition-colors cursor-pointer"
+                                  >
+                                    移除特权
+                                  </button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ========================================================================= */}
+          {/* Tab 4: 访问与审计统计 */}
+          {/* ========================================================================= */}
+          {activeTab === 'stats' && (
+            <div className="flex flex-col gap-6">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-card-border pb-3">
+                <div className="flex border-b-2 border-transparent gap-6">
+                  <button
+                    onClick={() => setStatsSubTab('access')}
+                    className={`pb-2 text-sm font-bold border-b-2 transition-all cursor-pointer ${
+                      statsSubTab === 'access'
+                        ? 'border-zpje-accent text-zpje-accent'
+                        : 'border-transparent text-text-sec hover:text-title'
+                    }`}
+                  >
+                    子系统访问统计
+                  </button>
+                  <button
+                    onClick={() => setStatsSubTab('system')}
+                    className={`pb-2 text-sm font-bold border-b-2 transition-all cursor-pointer ${
+                      statsSubTab === 'system'
+                        ? 'border-zpje-accent text-zpje-accent'
+                        : 'border-transparent text-text-sec hover:text-title'
+                    }`}
+                  >
+                    系统审计日志
+                  </button>
+                </div>
+              </div>
+
+              {statsSubTab === 'access' ? (
+                // 访问统计
+                <div className="bg-card-surface border border-card-border rounded-2xl overflow-hidden shadow-sm flex flex-col justify-between min-h-[400px]">
+                  <div className="overflow-x-auto">
                     <table className="w-full text-left border-collapse text-xs">
                       <thead>
                         <tr className="bg-sidebar-hover/40 border-b border-card-border text-text-sec font-semibold">
-                          <th className="p-3">姓名 / 账号</th>
-                          <th className="p-3">所属单位与部门</th>
-                          <th className="p-3 w-44">管理员类型角色</th>
-                          <th className="p-3 w-20 text-right">操作</th>
+                          <th className="p-3 w-40">访问时间</th>
+                          <th className="p-3 w-40">访问人员</th>
+                          <th className="p-3">目标应用</th>
+                          <th className="p-3 w-32">来源 IP</th>
+                          <th className="p-3 w-48">客户端环境</th>
                         </tr>
                       </thead>
-                      <tbody>
-                        {adminMembers.length > 0 ? (
-                          adminMembers.map((admin) => (
-                            <tr key={admin.id} className="border-b border-card-border hover:bg-sidebar-hover/10 transition-colors">
-                              <td className="p-3">
-                                <div className="font-bold text-title">{admin.name}</div>
-                                <div className="text-[10px] font-mono text-text-sec">@{admin.loginName}</div>
-                              </td>
-                              <td className="p-3 text-text-sec">
-                                <div>{admin.unitName}</div>
-                                <div className="text-[10px] mt-0.5">{admin.deptName}</div>
-                              </td>
-                              <td className="p-3">
-                                <select
-                                  value={admin.adminType}
-                                  onChange={(e) => handleAdminTypeChange(admin.id, e.target.value as any)}
-                                  className={`px-3 py-1 rounded-full border text-[10px] font-bold outline-none cursor-pointer ${admin.adminType === 'SYS_ADMIN' ? 'bg-red-500/10 text-red-500 border-red-500/20' :
-                                    admin.adminType === 'OPS_ADMIN' ? 'bg-zpje-brand/10 text-zpje-brand border-zpje-brand/20' :
-                                      'bg-amber-500/10 text-amber-500 border-amber-500/20'
-                                    }`}
-                                >
-                                  <option value="SYS_ADMIN" className="bg-card-surface text-title">系统管理员</option>
-                                  <option value="OPS_ADMIN" className="bg-card-surface text-title">运维管理员</option>
-                                  <option value="DEPT_ADMIN" className="bg-card-surface text-title">部门管理员</option>
-                                  <option value="NONE" className="bg-card-surface text-red-500 font-bold">撤销管理员 (NONE)</option>
-                                </select>
-                              </td>
-                              <td className="p-3 text-right">
-                                <button
-                                  onClick={() => {
-                                    if (window.confirm(`确认撤销管理员 “${admin.name}” 的全部特权吗？`)) {
-                                      handleAdminTypeChange(admin.id, 'NONE');
-                                    }
-                                  }}
-                                  className="text-red-500 hover:text-red-600 font-semibold"
-                                >
-                                  撤销
-                                </button>
-                              </td>
-                            </tr>
-                          ))
-                        ) : (
-                          <tr>
-                            <td colSpan={4} className="p-12 text-center text-text-sec italic bg-card-surface">
-                              暂无人工授权的管理员角色。
+                      <tbody className="divide-y divide-card-border">
+                        {paginatedAccessLogs.map((log) => (
+                          <tr key={log.id} className="hover:bg-sidebar-hover/20 transition-colors">
+                            <td className="p-3 text-text-sec font-mono">
+                              {new Date(log.timestamp).toLocaleString('zh-CN', { hour12: false })}
+                            </td>
+                            <td className="p-3">
+                              <div className="font-bold text-title">{log.userName || log.loginName}</div>
+                              <div className="text-[10px] text-text-sec font-mono">@{log.loginName}</div>
+                            </td>
+                            <td className="p-3 font-semibold text-title">{log.app?.name}</td>
+                            <td className="p-3 text-text-sec font-mono">{log.ip || '-'}</td>
+                            <td className="p-3 text-text-sec truncate max-w-xs" title={log.userAgent || ''}>
+                              {log.userAgent || '-'}
                             </td>
                           </tr>
-                        )}
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ) : (
+                // 系统审计日志
+                <div className="bg-card-surface border border-card-border rounded-2xl overflow-hidden shadow-sm flex flex-col justify-between min-h-[400px]">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse text-xs">
+                      <thead>
+                        <tr className="bg-sidebar-hover/40 border-b border-card-border text-text-sec font-semibold">
+                          <th className="p-3 w-40">发生时间</th>
+                          <th className="p-3 w-36">操作人</th>
+                          <th className="p-3 w-32">操作类型</th>
+                          <th className="p-3">日志详情</th>
+                          <th className="p-3 w-32">IP 地址</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-card-border">
+                        {paginatedSystemLogs.map((log) => (
+                          <tr key={log.id} className="hover:bg-sidebar-hover/20 transition-colors">
+                            <td className="p-3 text-text-sec font-mono">
+                              {new Date(log.timestamp).toLocaleString('zh-CN', { hour12: false })}
+                            </td>
+                            <td className="p-3">
+                              <div className="font-bold text-title">{log.userName || log.loginName}</div>
+                              <div className="text-[10px] text-text-sec font-mono">@{log.loginName}</div>
+                            </td>
+                            <td className="p-3">
+                              <span className="inline-flex px-2 py-0.5 rounded text-[10px] font-mono bg-sidebar-hover text-text-sec border border-card-border">
+                                {log.actionType}
+                              </span>
+                            </td>
+                            <td className="p-3 text-title">{log.detail}</td>
+                            <td className="p-3 text-text-sec font-mono">{log.ip || '-'}</td>
+                          </tr>
+                        ))}
                       </tbody>
                     </table>
                   </div>
                 </div>
               )}
-            </>
-          )}
-
-          {/* Tab 4: Access stats and audits */}
-          {activeTab === 'stats' && (
-            <>
-              {/* Stats & Audit Sub-tabs Selector */}
-              <div className="flex border-b border-card-border pb-3 mb-6 gap-6 shrink-0">
-                <button
-                  onClick={() => setStatsSubTab('access')}
-                  className={`pb-2.5 text-sm font-bold border-b-2 transition-all cursor-pointer ${statsSubTab === 'access'
-                    ? 'border-zpje-accent text-zpje-accent'
-                    : 'border-transparent text-text-sec hover:text-title'
-                    }`}
-                >
-                  用户访问审计与统计
-                </button>
-                <button
-                  onClick={() => {
-                    setStatsSubTab('system');
-                    setSystemLogPage(1);
-                  }}
-                  className={`pb-2.5 text-sm font-bold border-b-2 transition-all cursor-pointer ${statsSubTab === 'system'
-                    ? 'border-zpje-accent text-zpje-accent'
-                    : 'border-transparent text-text-sec hover:text-title'
-                    }`}
-                >
-                  系统操作与审计日志
-                </button>
-              </div>
-
-              {statsSubTab === 'access' ? (
-                <>
-                  <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-                    <div className="flex flex-col gap-1.5">
-                      <h1 className="text-2xl font-bold tracking-tight text-title">系统访问统计</h1>
-                      <p className="text-sm text-text-sec">审计用户点击访问日志，分析子系统活跃热度和安全访问量。</p>
-                    </div>
-
-                    {/* Time filters */}
-                    <div className="flex bg-sidebar-hover/40 p-1 rounded-lg border border-card-border shrink-0">
-                      {(['24h', '7d', '30d', 'all'] as const).map(f => (
-                        <button
-                          key={f}
-                          onClick={() => {
-                            setTimeFilter(f);
-                            setCurrentPage(1);
-                          }}
-                          className={`px-3 py-1 rounded text-xs font-semibold transition-all ${timeFilter === f
-                            ? 'bg-card-surface text-title shadow-sm'
-                            : 'text-text-sec hover:text-title'
-                            }`}
-                        >
-                          {f === '24h' ? '近 24 小时' : f === '7d' ? '近 7 天' : f === '30d' ? '近 30 天' : '全部'}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Metric Summary Cards */}
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <div className="bg-card-surface border border-card-border p-5 rounded-2xl flex items-center gap-4 shadow-sm">
-                      <div className="p-3 bg-zpje-brand/10 text-zpje-brand rounded-xl">
-                        <MousePointerClick className="w-6 h-6" />
-                      </div>
-                      <div>
-                        <span className="text-xs text-text-sec">系统总访问点击量</span>
-                        <h3 className="text-2xl font-extrabold text-title mt-0.5 font-mono">{totalVisits}</h3>
-                      </div>
-                    </div>
-                    <div className="bg-card-surface border border-card-border p-5 rounded-2xl flex items-center gap-4 shadow-sm">
-                      <div className="p-3 bg-emerald-500/10 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400 rounded-xl">
-                        <Users className="w-6 h-6" />
-                      </div>
-                      <div>
-                        <span className="text-xs text-text-sec">活跃访问账号数</span>
-                        <h3 className="text-2xl font-extrabold text-title mt-0.5 font-mono">{activeUsersCount}</h3>
-                      </div>
-                    </div>
-                    <div className="bg-card-surface border border-card-border p-5 rounded-2xl flex items-center gap-4 shadow-sm">
-                      <div className="p-3 bg-amber-500/10 text-amber-600 dark:bg-amber-500/20 dark:text-amber-400 rounded-xl">
-                        <Layers className="w-6 h-6" />
-                      </div>
-                      <div>
-                        <span className="text-xs text-text-sec">最热门访问子系统</span>
-                        <h3 className="text-lg font-bold text-title mt-1 truncate max-w-[200px]" title={topApp}>{topApp}</h3>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Split layout: Rank bar chart + Logs table */}
-                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start w-full">
-
-                    {/* CSS Progress Rank Chart */}
-                    <div className="bg-card-surface border border-card-border p-5 rounded-2xl flex flex-col gap-6 shadow-sm">
-                      <div className="flex items-center gap-2 border-b border-card-border pb-3">
-                        <BarChart3 className="w-4 h-4 text-zpje-brand" />
-                        <h4 className="font-bold text-title text-sm">系统访问排行</h4>
-                      </div>
-
-                      <div className="flex flex-col gap-4">
-                        {rankList.length > 0 ? (
-                          rankList.map((item, idx) => {
-                            const pct = Math.round((item.count / maxCount) * 100);
-                            return (
-                              <div key={item.name} className="flex flex-col gap-1.5">
-                                <div className="flex items-center justify-between text-xs font-semibold">
-                                  <span className="text-title truncate max-w-[200px] flex gap-1.5">
-                                    <span className="text-text-sec font-mono">#{idx + 1}</span>
-                                    {item.name}
-                                  </span>
-                                  <span className="text-text-sec font-mono">{item.count} 次</span>
-                                </div>
-                                <div className="w-full bg-sidebar-hover h-2.5 rounded-full overflow-hidden">
-                                  <div
-                                    className="bg-zpje-brand h-full rounded-full transition-all duration-500"
-                                    style={{ width: `${pct}%` }}
-                                  />
-                                </div>
-                              </div>
-                            );
-                          })
-                        ) : (
-                          <div className="text-center py-10 text-xs text-text-sec italic">
-                            暂无访问点击数据。
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Log Records Table */}
-                    <div className="lg:col-span-2 bg-card-surface border border-card-border rounded-2xl overflow-hidden shadow-sm flex flex-col justify-between min-h-[500px]">
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-left border-collapse text-xs">
-                          <thead>
-                            <tr className="bg-sidebar-hover/40 border-b border-card-border text-text-sec font-semibold">
-                              <th className="p-3 w-40">时间</th>
-                              <th className="p-3 w-32">用户姓名</th>
-                              <th className="p-3 w-32">用户登录名</th>
-                              <th className="p-3 w-40">访问系统</th>
-                              <th className="p-3 w-32">来源 IP</th>
-                              <th className="p-3">浏览器终端 (UserAgent)</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {paginatedLogs.length > 0 ? (
-                              paginatedLogs.map((log) => (
-                                <tr key={log.id} className="border-b border-card-border hover:bg-sidebar-hover/10 transition-colors">
-                                  <td className="p-3 text-text-sec font-mono whitespace-nowrap">
-                                    {new Date(log.timestamp).toLocaleString('zh-CN', { hour12: false })}
-                                  </td>
-                                  <td className="p-3 font-semibold text-title">{log.userName || <span className="text-text-sec/40 italic">未知</span>}</td>
-                                  <td className="p-3 text-text-sec font-mono">{log.loginName}</td>
-                                  <td className="p-3">
-                                    <div className="font-semibold text-title">{log.app?.name}</div>
-                                    <div className="text-[10px] font-mono text-text-sec">{log.app?.key}</div>
-                                  </td>
-                                  <td className="p-3 text-text-sec font-mono">{log.ip || '未知'}</td>
-                                  <td className="p-3 text-text-sec max-w-xs truncate" title={log.userAgent || ''}>
-                                    {log.userAgent || '-'}
-                                  </td>
-                                </tr>
-                              ))
-                            ) : (
-                              <tr>
-                                <td colSpan={6} className="p-12 text-center text-text-sec italic bg-card-surface">
-                                  筛选期间内暂无审计日志。
-                                </td>
-                              </tr>
-                            )}
-                          </tbody>
-                        </table>
-                      </div>
-
-                      {/* Pagination Controls */}
-                      {totalPages > 1 && (
-                        <div className="p-3 border-t border-card-border bg-sidebar-hover/20 flex items-center justify-between text-xs">
-                          <span className="text-text-sec">
-                            显示第 {(currentPage - 1) * itemsPerPage + 1} 到 {Math.min(currentPage * itemsPerPage, filteredLogs.length)} 条，共 {filteredLogs.length} 条记录
-                          </span>
-                          <div className="flex items-center gap-1.5">
-                            <button
-                              onClick={() => handlePageChange(currentPage - 1)}
-                              disabled={currentPage === 1}
-                              className="p-1.5 rounded border border-input-border bg-card-surface hover:bg-sidebar-hover disabled:opacity-40 disabled:cursor-not-allowed text-title"
-                            >
-                              <ChevronLeft className="w-4 h-4" />
-                            </button>
-                            <span className="px-3 font-bold text-title">
-                              {currentPage} / {totalPages}
-                            </span>
-                            <button
-                              onClick={() => handlePageChange(currentPage + 1)}
-                              disabled={currentPage === totalPages}
-                              className="p-1.5 rounded border border-input-border bg-card-surface hover:bg-sidebar-hover disabled:opacity-40 disabled:cursor-not-allowed text-title"
-                            >
-                              <ChevronRight className="w-4 h-4" />
-                            </button>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-
-                  </div>
-                </>
-              ) : (
-                // statsSubTab === 'system': System operations & audit logs
-                <div className="flex flex-col gap-6">
-                  {/* Title & Filter Bar */}
-                  <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 border-b border-card-border pb-5">
-                    <div>
-                      <h2 className="text-xl font-bold text-title">系统操作与审计日志</h2>
-                      <p className="text-xs text-text-sec mt-1">审计用户单点登录、登出、以及管理员的应用管理、Widget配置和特权管理员分配记录。</p>
-                    </div>
-
-                    {/* Filters: Search & Type Select */}
-                    <div className="flex flex-wrap items-center gap-3">
-                      {/* Search box */}
-                      <div className="relative min-w-[240px]">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-sec" />
-                        <input
-                          type="text"
-                          placeholder="搜索操作人、登录名或详情..."
-                          value={systemLogSearch}
-                          onChange={(e) => {
-                            setSystemLogSearch(e.target.value);
-                            setSystemLogPage(1);
-                          }}
-                          className="w-full pl-9 pr-4 py-2 text-xs rounded-xl border border-card-border bg-card-surface text-title focus:outline-none focus:border-zpje-accent transition-colors"
-                        />
-                        {systemLogSearch && (
-                          <button
-                            onClick={() => {
-                              setSystemLogSearch('');
-                              setSystemLogPage(1);
-                            }}
-                            className="absolute right-3 top-1/2 -translate-y-1/2 text-text-sec hover:text-title"
-                          >
-                            <X className="w-3.5 h-3.5" />
-                          </button>
-                        )}
-                      </div>
-
-                      {/* Log Type Select */}
-                      <select
-                        value={logTypeFilter}
-                        onChange={(e) => {
-                          setLogTypeFilter(e.target.value);
-                          setSystemLogPage(1);
-                        }}
-                        className="px-3 py-2 text-xs rounded-xl border border-card-border bg-card-surface text-title focus:outline-none focus:border-zpje-accent cursor-pointer"
-                      >
-                        <option value="all">所有日志类型</option>
-                        <option value="SSO_LOGIN">用户单点登录 (SSO)</option>
-                        <option value="LOGOUT">用户退出登录</option>
-                        <option value="APP_ACCESS">子系统访问记录</option>
-                        <option value="APP_MANAGE">应用管理操作</option>
-                        <option value="WIDGET_MANAGE">Widget配置操作</option>
-                        <option value="ROLE_MANAGE">业务角色分配操作</option>
-                        <option value="ADMIN_MANAGE">特权管理员分配操作</option>
-                      </select>
-                    </div>
-                  </div>
-
-                  {/* Log Records Table */}
-                  <div className="bg-card-surface border border-card-border rounded-2xl overflow-hidden shadow-sm flex flex-col justify-between min-h-[500px]">
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-left border-collapse text-xs">
-                        <thead>
-                          <tr className="bg-sidebar-hover/40 border-b border-card-border text-text-sec font-semibold font-mono">
-                            <th className="p-3 w-40">发生时间</th>
-                            <th className="p-3 w-48">操作人 (登录名)</th>
-                            <th className="p-3 w-36">日志类型</th>
-                            <th className="p-3">操作描述详情</th>
-                            <th className="p-3 w-32">来源 IP</th>
-                            <th className="p-3 w-44">浏览器终端 (UserAgent)</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {paginatedSystemLogs.length > 0 ? (
-                            paginatedSystemLogs.map((log) => {
-                              // Style tag for action type
-                              let typeColor = "bg-gray-500/10 text-gray-500 border-gray-500/20";
-                              let typeText = log.actionType;
-                              if (log.actionType === 'SSO_LOGIN') {
-                                typeColor = "bg-emerald-500/10 text-emerald-600 border-emerald-500/20 dark:text-emerald-400";
-                                typeText = "单点登录";
-                              } else if (log.actionType === 'LOGOUT') {
-                                typeColor = "bg-gray-500/10 text-text-sec border-card-border";
-                                typeText = "退出登录";
-                              } else if (log.actionType === 'APP_ACCESS') {
-                                typeColor = "bg-blue-500/10 text-blue-600 border-blue-500/20 dark:text-blue-400";
-                                typeText = "子系统访问";
-                              } else if (log.actionType === 'APP_MANAGE') {
-                                typeColor = "bg-purple-500/10 text-purple-600 border-purple-500/20 dark:text-purple-400";
-                                typeText = "应用管理";
-                              } else if (log.actionType === 'WIDGET_MANAGE') {
-                                typeColor = "bg-amber-500/10 text-amber-600 border-amber-500/20 dark:text-amber-400";
-                                typeText = "Widget配置";
-                              } else if (log.actionType === 'ROLE_MANAGE') {
-                                typeColor = "bg-teal-500/10 text-teal-600 border-teal-500/20 dark:text-teal-400 font-bold";
-                                typeText = "角色分配";
-                              } else if (log.actionType === 'ADMIN_MANAGE') {
-                                typeColor = "bg-rose-500/10 text-rose-600 border-rose-500/20 dark:text-rose-400 font-bold";
-                                typeText = "管理员分配";
-                              }
-
-                              return (
-                                <tr key={log.id} className="border-b border-card-border hover:bg-sidebar-hover/10 transition-colors">
-                                  <td className="p-3 text-text-sec font-mono whitespace-nowrap">
-                                    {new Date(log.timestamp).toLocaleString('zh-CN', { hour12: false })}
-                                  </td>
-                                  <td className="p-3">
-                                    <div className="font-semibold text-title">
-                                      {log.userName || <span className="text-text-sec/40 italic">系统用户</span>}
-                                    </div>
-                                    <div className="text-[10px] font-mono text-text-sec">@{log.loginName}</div>
-                                  </td>
-                                  <td className="p-3">
-                                    <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] border ${typeColor}`}>
-                                      {typeText}
-                                    </span>
-                                  </td>
-                                  <td className="p-3 font-medium text-title max-w-sm truncate" title={log.detail}>
-                                    {log.detail}
-                                  </td>
-                                  <td className="p-3 text-text-sec font-mono">{log.ip || '未知'}</td>
-                                  <td className="p-3 text-text-sec max-w-xs truncate" title={log.userAgent || ''}>
-                                    {log.userAgent || '-'}
-                                  </td>
-                                </tr>
-                              );
-                            })
-                          ) : (
-                            <tr>
-                              <td colSpan={6} className="p-12 text-center text-text-sec italic bg-card-surface">
-                                暂无匹配的系统审计日志。
-                              </td>
-                            </tr>
-                          )}
-                        </tbody>
-                      </table>
-                    </div>
-
-                    {/* Pagination Controls */}
-                    {totalLogPages > 1 && (
-                      <div className="p-3 border-t border-card-border bg-sidebar-hover/20 flex items-center justify-between text-xs">
-                        <span className="text-text-sec">
-                          显示第 {(systemLogPage - 1) * logsPerPage + 1} 到 {Math.min(systemLogPage * logsPerPage, filteredSystemLogs.length)} 条，共 {filteredSystemLogs.length} 条记录
-                        </span>
-                        <div className="flex items-center gap-1.5">
-                          <button
-                            onClick={() => setSystemLogPage(p => Math.max(1, p - 1))}
-                            disabled={systemLogPage === 1}
-                            className="p-1.5 rounded border border-input-border bg-card-surface hover:bg-sidebar-hover disabled:opacity-40 disabled:cursor-not-allowed text-title"
-                          >
-                            <ChevronLeft className="w-4 h-4" />
-                          </button>
-                          <span className="px-3 font-bold text-title">
-                            {systemLogPage} / {totalLogPages}
-                          </span>
-                          <button
-                            onClick={() => setSystemLogPage(p => Math.min(totalLogPages, p + 1))}
-                            disabled={systemLogPage === totalLogPages}
-                            className="p-1.5 rounded border border-input-border bg-card-surface hover:bg-sidebar-hover disabled:opacity-40 disabled:cursor-not-allowed text-title"
-                          >
-                            <ChevronRight className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-            </>
+            </div>
           )}
         </div>
       </div>
 
-      {/* App Form Modal */}
+      {/* ========================================================================= */}
+      {/* Modal 1: 批量添加成员弹窗 (AddMemberModal) */}
+      {/* ========================================================================= */}
+      {isAddMemberModalOpen && activeRole && (
+        <AddMemberModal
+          role={activeRole}
+          departmentsTree={departmentsTree}
+          existingMemberIds={selectedRoleMembers.map((m) => m.id)}
+          onClose={() => setIsAddMemberModalOpen(false)}
+          onSuccess={(addedMembers) => {
+            setSelectedRoleMembers((prev) => [...prev, ...addedMembers]);
+            setRolesList((prev) =>
+              prev.map((r) =>
+                r.id === activeRole.id
+                  ? { ...r, memberCount: (r.memberCount || 0) + addedMembers.length }
+                  : r
+              )
+            );
+            setIsAddMemberModalOpen(false);
+          }}
+        />
+      )}
+
+      {/* ========================================================================= */}
+      {/* Modal 2: 新建业务角色弹窗 (CreateRoleModal) */}
+      {/* ========================================================================= */}
+      {isCreateRoleModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="w-full max-w-md bg-card-surface rounded-2xl border border-card-border shadow-2xl overflow-hidden">
+            <div className="px-6 py-4 border-b border-card-border flex items-center justify-between bg-sidebar-hover/20">
+              <div className="flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-zpje-accent" />
+                <h3 className="font-bold text-title text-sm">创建新业务角色</h3>
+              </div>
+              <button
+                onClick={() => setIsCreateRoleModalOpen(false)}
+                className="p-1 rounded-lg text-text-sec hover:text-title hover:bg-sidebar-hover transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateRoleSubmit} className="p-6 flex flex-col gap-4">
+              {newRoleError && (
+                <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-500 text-xs">
+                  {newRoleError}
+                </div>
+              )}
+
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-bold text-text-sec uppercase tracking-wider">
+                  角色标识 Key <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={newRoleKey}
+                  onChange={(e) => setNewRoleKey(e.target.value)}
+                  placeholder="例如: welder 或 quality_inspector"
+                  className="px-3 py-2 rounded-xl border border-input-border bg-canvas text-title text-sm focus:outline-none focus:ring-1 focus:ring-zpje-accent font-mono"
+                />
+                <span className="text-[10px] text-text-sec">仅支持英文、数字与下划线</span>
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-bold text-text-sec uppercase tracking-wider">
+                  角色名称 <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={newRoleName}
+                  onChange={(e) => setNewRoleName(e.target.value)}
+                  placeholder="例如: 管道质检组"
+                  className="px-3 py-2 rounded-xl border border-input-border bg-canvas text-title text-sm focus:outline-none focus:ring-1 focus:ring-zpje-accent"
+                />
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-bold text-text-sec uppercase tracking-wider">
+                  角色职能描述
+                </label>
+                <textarea
+                  value={newRoleDesc}
+                  onChange={(e) => setNewRoleDesc(e.target.value)}
+                  placeholder="简述该角色的业务范围与授权用途..."
+                  rows={3}
+                  className="px-3 py-2 rounded-xl border border-input-border bg-canvas text-title text-sm focus:outline-none focus:ring-1 focus:ring-zpje-accent resize-none"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-4 border-t border-card-border">
+                <button
+                  type="button"
+                  onClick={() => setIsCreateRoleModalOpen(false)}
+                  className="px-4 py-2 rounded-xl border border-input-border text-xs font-bold text-text-sec hover:text-title hover:bg-sidebar-hover transition-all"
+                >
+                  取消
+                </button>
+                <button
+                  type="submit"
+                  disabled={newRoleSubmitting}
+                  className="px-4 py-2 rounded-xl bg-zpje-accent text-white text-xs font-bold hover:opacity-90 transition-all disabled:opacity-50"
+                >
+                  {newRoleSubmitting ? '创建中...' : '确认创建'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* Modal 2.5: 编辑业务角色弹窗 (EditRoleModal) */}
+      {/* ========================================================================= */}
+      {isEditRoleModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="w-full max-w-md bg-card-surface rounded-2xl border border-card-border shadow-2xl overflow-hidden">
+            <div className="px-6 py-4 border-b border-card-border flex items-center justify-between bg-sidebar-hover/20">
+              <div className="flex items-center gap-2">
+                <Edit className="w-4 h-4 text-zpje-accent" />
+                <h3 className="font-bold text-title text-sm">编辑业务角色</h3>
+              </div>
+              <button
+                onClick={() => setIsEditRoleModalOpen(false)}
+                className="p-1 rounded-lg text-text-sec hover:text-title hover:bg-sidebar-hover transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleEditRoleSubmit} className="p-6 flex flex-col gap-4">
+              {editRoleError && (
+                <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-500 text-xs">
+                  {editRoleError}
+                </div>
+              )}
+
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-bold text-text-sec uppercase tracking-wider">
+                  角色标识 Key <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={editRoleKey}
+                  onChange={(e) => setEditRoleKey(e.target.value)}
+                  placeholder="例如: welder 或 quality_inspector"
+                  className="px-3 py-2 rounded-xl border border-input-border bg-canvas text-title text-sm focus:outline-none focus:ring-1 focus:ring-zpje-accent font-mono"
+                />
+                <span className="text-[10px] text-text-sec">支持修改，仅限英文、数字与下划线</span>
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-bold text-text-sec uppercase tracking-wider">
+                  角色名称 <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={editRoleName}
+                  onChange={(e) => setEditRoleName(e.target.value)}
+                  placeholder="例如: 管道质检组"
+                  className="px-3 py-2 rounded-xl border border-input-border bg-canvas text-title text-sm focus:outline-none focus:ring-1 focus:ring-zpje-accent"
+                />
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-bold text-text-sec uppercase tracking-wider">
+                  角色职能描述
+                </label>
+                <textarea
+                  value={editRoleDesc}
+                  onChange={(e) => setEditRoleDesc(e.target.value)}
+                  placeholder="简述该角色的业务范围与授权用途..."
+                  rows={3}
+                  className="px-3 py-2 rounded-xl border border-input-border bg-canvas text-title text-sm focus:outline-none focus:ring-1 focus:ring-zpje-accent resize-none"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-4 border-t border-card-border">
+                <button
+                  type="button"
+                  onClick={() => setIsEditRoleModalOpen(false)}
+                  className="px-4 py-2 rounded-xl border border-input-border text-xs font-bold text-text-sec hover:text-title hover:bg-sidebar-hover transition-all"
+                >
+                  取消
+                </button>
+                <button
+                  type="submit"
+                  disabled={editRoleSubmitting}
+                  className="px-4 py-2 rounded-xl bg-zpje-accent text-white text-xs font-bold hover:opacity-90 transition-all disabled:opacity-50"
+                >
+                  {editRoleSubmitting ? '保存中...' : '保存修改'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* Modal 3: 应用新增/编辑弹窗 (含应用权限与可见性隔离树形组件) */}
+      {/* ========================================================================= */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
-          <div className="w-full max-w-2xl bg-card-surface rounded-lg border border-card-border shadow-xl overflow-hidden animate-in fade-in zoom-in duration-200 text-text-main">
-            <div className="px-6 py-4 border-b border-card-border flex items-center justify-between bg-sidebar-hover/10">
-              <h2 className="text-lg font-bold text-title">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="w-full max-w-3xl bg-card-surface rounded-2xl border border-card-border shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+            <div className="px-6 py-4 border-b border-card-border flex items-center justify-between bg-sidebar-hover/20 shrink-0">
+              <h2 className="text-base font-bold text-title">
                 {editingApp ? '编辑应用' : '新增应用'}
               </h2>
               <button
                 onClick={() => setIsModalOpen(false)}
-                className="p-1 rounded-full hover:bg-sidebar-hover text-text-sec hover:text-title transition-colors"
+                className="p-1 rounded-lg hover:bg-sidebar-hover text-text-sec hover:text-title transition-colors"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleSubmit}>
-              <div className="p-6 flex flex-col gap-4 max-h-[70vh] overflow-y-auto">
+            <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-hidden">
+              <div className="p-6 flex flex-col gap-4 overflow-y-auto flex-1">
                 {errorMessage && (
-                  <div className="p-3 rounded bg-red-500/10 border border-red-500/20 text-red-500 text-xs flex items-start gap-2">
+                  <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-500 text-xs flex items-start gap-2">
                     <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
                     <span>{errorMessage}</span>
                   </div>
@@ -2096,13 +2205,14 @@ export default function AdminAppRegistry({
                       value={key}
                       onChange={(e) => setKey(e.target.value)}
                       placeholder="例如: CarbonPlatform"
-                      className="px-3 py-2 rounded border border-input-border bg-card-surface text-title text-sm focus:outline-none focus:ring-1 focus:ring-title focus:border-title disabled:bg-sidebar-hover font-mono"
+                      className="px-3 py-2 rounded-xl border border-input-border bg-canvas text-title text-sm focus:outline-none focus:ring-1 focus:ring-zpje-accent disabled:opacity-50 font-mono"
                     />
                   </div>
 
                   <div className="flex flex-col gap-1.5">
                     <label className="text-xs font-bold text-text-sec uppercase tracking-wider">
-                      应用名称 <span className="text-red-500">*</span> <span className="text-text-sec/60 font-normal ml-1">(建议20字以内)</span>
+                      应用名称 <span className="text-red-500">*</span>
+                      <span className="text-text-sec/60 font-normal ml-1">(建议20字以内)</span>
                     </label>
                     <input
                       type="text"
@@ -2110,7 +2220,7 @@ export default function AdminAppRegistry({
                       value={name}
                       onChange={(e) => setName(e.target.value)}
                       placeholder="例如: 能碳管理平台"
-                      className="px-3 py-2 rounded border border-input-border bg-card-surface text-title text-sm focus:outline-none focus:ring-1 focus:ring-title focus:border-title"
+                      className="px-3 py-2 rounded-xl border border-input-border bg-canvas text-title text-sm focus:outline-none focus:ring-1 focus:ring-zpje-accent"
                     />
                   </div>
                 </div>
@@ -2125,7 +2235,7 @@ export default function AdminAppRegistry({
                     value={url}
                     onChange={(e) => setUrl(e.target.value)}
                     placeholder="例如: https://energy.izpje.com"
-                    className="px-3 py-2 rounded border border-input-border bg-card-surface text-title text-sm focus:outline-none focus:ring-1 focus:ring-title focus:border-title font-mono"
+                    className="px-3 py-2 rounded-xl border border-input-border bg-canvas text-title text-sm focus:outline-none focus:ring-1 focus:ring-zpje-accent font-mono"
                   />
                 </div>
 
@@ -2136,28 +2246,56 @@ export default function AdminAppRegistry({
                   <textarea
                     value={description}
                     onChange={(e) => setDescription(e.target.value)}
-                    placeholder="简短描述该系统的主要功能"
+                    placeholder="简短描述该系统的主要功能与业务定位..."
                     rows={2}
-                    className="px-3 py-2 rounded border border-input-border bg-card-surface text-title text-sm focus:outline-none focus:ring-1 focus:ring-title focus:border-title resize-none"
+                    className="px-3 py-2 rounded-xl border border-input-border bg-canvas text-title text-sm focus:outline-none focus:ring-1 focus:ring-zpje-accent resize-none"
                   />
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="flex flex-col gap-1.5 col-span-2 md:col-span-1">
+                {/* Theme Color, Icon & Sort */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="flex flex-col gap-1.5">
                     <label className="text-xs font-bold text-text-sec uppercase tracking-wider">
-                      图标预设 (Icon)
+                      应用主题色
                     </label>
                     <div className="flex items-center gap-2">
-                      <div className="flex items-center justify-center w-10 h-10 rounded border border-input-border bg-card-surface text-title shrink-0">
-                        {renderIcon(icon, "w-5 h-5")}
+                      <input
+                        type="color"
+                        value={color}
+                        onChange={(e) => setColor(e.target.value)}
+                        className="w-10 h-10 rounded-lg border border-input-border cursor-pointer bg-transparent"
+                      />
+                      <input
+                        type="text"
+                        value={color}
+                        onChange={(e) => setColor(e.target.value)}
+                        className="flex-1 px-3 py-2 rounded-xl border border-input-border bg-canvas text-title text-sm font-mono focus:outline-none focus:ring-1 focus:ring-zpje-accent uppercase"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-xs font-bold text-text-sec uppercase tracking-wider">
+                      图标预设
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <div
+                        className="w-10 h-10 rounded-xl border flex items-center justify-center shrink-0"
+                        style={{
+                          backgroundColor: getRgba(color, 0.1),
+                          borderColor: getRgba(color, 0.3),
+                          color: color,
+                        }}
+                      >
+                        {renderIcon(icon, 'w-5 h-5')}
                       </div>
                       <select
                         value={icon}
                         onChange={(e) => setIcon(e.target.value)}
-                        className="flex-1 px-3 py-2 rounded border border-input-border bg-card-surface text-title text-sm focus:outline-none focus:ring-1 focus:ring-title focus:border-title font-mono h-10 cursor-pointer"
+                        className="flex-1 px-3 py-2 rounded-xl border border-input-border bg-canvas text-title text-sm focus:outline-none focus:ring-1 focus:ring-zpje-accent font-mono cursor-pointer"
                       >
                         {ICON_PRESETS.map((iconName) => (
-                          <option key={iconName} value={iconName} className="bg-card-surface text-title font-mono">
+                          <option key={iconName} value={iconName}>
                             {iconName}
                           </option>
                         ))}
@@ -2165,7 +2303,7 @@ export default function AdminAppRegistry({
                     </div>
                   </div>
 
-                  <div className="flex flex-col gap-1.5 col-span-2 md:col-span-1">
+                  <div className="flex flex-col gap-1.5">
                     <label className="text-xs font-bold text-text-sec uppercase tracking-wider">
                       排序权值 (正整数)
                     </label>
@@ -2173,13 +2311,14 @@ export default function AdminAppRegistry({
                       type="number"
                       value={sortOrder}
                       onChange={(e) => setSortOrder(Number(e.target.value))}
-                      className="px-3 py-2 rounded border border-input-border bg-card-surface text-title text-sm focus:outline-none focus:ring-1 focus:ring-title focus:border-title font-mono h-10"
+                      className="px-3 py-2 rounded-xl border border-input-border bg-canvas text-title text-sm focus:outline-none focus:ring-1 focus:ring-zpje-accent font-mono"
                     />
                   </div>
                 </div>
 
+                {/* Unit and Department Selection */}
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="flex flex-col gap-1.5 col-span-2 md:col-span-1">
+                  <div className="flex flex-col gap-1.5">
                     <label className="text-xs font-bold text-text-sec uppercase tracking-wider">
                       所属单位 <span className="text-red-500">*</span>
                     </label>
@@ -2187,35 +2326,33 @@ export default function AdminAppRegistry({
                       required
                       value={selectedUnitId}
                       onChange={(e) => handleUnitChange(e.target.value)}
-                      className="px-3 py-2 rounded border border-input-border bg-card-surface text-title text-sm focus:outline-none focus:ring-1 focus:ring-title focus:border-title h-10 cursor-pointer"
+                      className="px-3 py-2 rounded-xl border border-input-border bg-canvas text-title text-sm focus:outline-none focus:ring-1 focus:ring-zpje-accent cursor-pointer"
                     >
-                      <option value="" className="bg-card-surface text-title">-- 请选择所属单位 --</option>
-                      {departmentsTree
-                        .filter((unit) => unit.departments.length > 0)
-                        .map((unit) => (
-                          <option key={unit.id} value={unit.id} className="text-title bg-card-surface">
-                            {unit.name}
-                          </option>
-                        ))}
+                      <option value="">-- 请选择所属单位 --</option>
+                      {departmentsTree.map((unit) => (
+                        <option key={unit.id} value={unit.id}>
+                          {unit.name}
+                        </option>
+                      ))}
                     </select>
                   </div>
 
-                  <div className="flex flex-col gap-1.5 col-span-2 md:col-span-1">
+                  <div className="flex flex-col gap-1.5">
                     <label className="text-xs font-bold text-text-sec uppercase tracking-wider">
-                      所属部门
+                      所属部门 (选填)
                     </label>
                     <select
                       value={mainDeptId}
                       onChange={(e) => setMainDeptId(e.target.value)}
                       disabled={!selectedUnitId}
-                      className="px-3 py-2 rounded border border-input-border bg-card-surface text-title text-sm focus:outline-none focus:ring-1 focus:ring-title focus:border-title h-10 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="px-3 py-2 rounded-xl border border-input-border bg-canvas text-title text-sm focus:outline-none focus:ring-1 focus:ring-zpje-accent cursor-pointer disabled:opacity-50"
                     >
-                      <option value="" className="bg-card-surface text-title">-- 请选择所属部门 (允许为空) --</option>
+                      <option value="">-- 请选择所属部门 (允许为空) --</option>
                       {selectedUnitId &&
                         departmentsTree
                           .find((u) => u.id === selectedUnitId)
                           ?.departments.map((dept) => (
-                            <option key={dept.id} value={dept.id} className="text-title bg-card-surface">
+                            <option key={dept.id} value={dept.id}>
                               {dept.name}
                             </option>
                           ))}
@@ -2223,157 +2360,182 @@ export default function AdminAppRegistry({
                   </div>
                 </div>
 
-                {/* RBAC Visibility Permissions Group */}
+                {/* ========================================================= */}
+                {/* 🔒 应用权限与可见性隔离重构面板 */}
+                {/* ========================================================= */}
                 <div className="border-t border-card-border pt-4 mt-2 flex flex-col gap-3">
-                  <div className="flex items-center gap-2 mb-1">
-                    <Shield className="w-4 h-4 text-zpje-brand" />
-                    <span className="font-bold text-title text-sm">应用权限与可见性隔离</span>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Shield className="w-4 h-4 text-zpje-accent" />
+                      <span className="font-bold text-title text-sm">应用权限与可见性隔离</span>
+                    </div>
+                    <span className="text-[11px] text-text-sec">
+                      公式: 满足任一条件（Role OR Department）即可访问
+                    </span>
                   </div>
 
-                  <div className="flex items-center gap-3 p-2.5 rounded-lg border border-card-border bg-sidebar-hover/20">
-                    <input
-                      type="checkbox"
-                      id="visibleToAll"
-                      checked={visibleToAll}
-                      onChange={(e) => setVisibleToAll(e.target.checked)}
-                      className="w-4 h-4 accent-title cursor-pointer"
-                    />
-                    <label htmlFor="visibleToAll" className="text-xs font-bold cursor-pointer select-none text-title">
-                      所有员工免检可见 (勾选后对所有登录人员开放，无需分配细分角色/部门权限)
+                  {/* Radio Group: 全员可见 vs 指定范围可见 */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <label
+                      className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all ${
+                        visibleToAll
+                          ? 'bg-zpje-accent/10 border-zpje-accent ring-1 ring-zpje-accent'
+                          : 'bg-canvas border-card-border hover:bg-sidebar-hover/40'
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="visibilityType"
+                        checked={visibleToAll}
+                        onChange={() => setVisibleToAll(true)}
+                        className="w-4 h-4 accent-zpje-accent cursor-pointer"
+                      />
+                      <div className="flex flex-col">
+                        <span className="text-xs font-bold text-title">全员免检可见</span>
+                        <span className="text-[10px] text-text-sec">
+                          所有通过 OA 登录的人员均可访问
+                        </span>
+                      </div>
+                    </label>
+
+                    <label
+                      className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all ${
+                        !visibleToAll
+                          ? 'bg-zpje-accent/10 border-zpje-accent ring-1 ring-zpje-accent'
+                          : 'bg-canvas border-card-border hover:bg-sidebar-hover/40'
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="visibilityType"
+                        checked={!visibleToAll}
+                        onChange={() => setVisibleToAll(false)}
+                        className="w-4 h-4 accent-zpje-accent cursor-pointer"
+                      />
+                      <div className="flex flex-col">
+                        <span className="text-xs font-bold text-title">指定范围可见</span>
+                        <span className="text-[10px] text-text-sec">
+                          按业务角色或组织部门授权
+                        </span>
+                      </div>
                     </label>
                   </div>
 
+                  {/* 细分授权工作区 (当且仅当 !visibleToAll 时展开) */}
                   {!visibleToAll && (
-                    <div className="grid grid-cols-2 gap-4 border border-card-border rounded-xl p-3 bg-sidebar-hover/10 animate-in fade-in duration-200">
+                    <div className="flex flex-col gap-4 border border-card-border rounded-2xl p-4 bg-sidebar-hover/10 animate-in fade-in duration-200 mt-1">
+                      {/* 1. 按业务角色授权 */}
                       <div className="flex flex-col gap-2">
-                        <span className="text-[10px] font-bold text-text-sec uppercase tracking-wider">分配给角色可见:</span>
-                        <div className="flex flex-col gap-1.5 max-h-36 overflow-y-auto border border-card-border bg-card-surface rounded-lg p-2.5">
-                          {roles.map(role => (
-                            <label key={role.id} className="flex items-center gap-2 cursor-pointer text-xs text-title font-medium">
-                              <input
-                                type="checkbox"
-                                checked={selectedRoleIds.includes(role.id)}
-                                onChange={() => toggleRoleSelection(role.id)}
-                                className="w-3.5 h-3.5 accent-title"
-                              />
-                              <span>{role.name} ({role.key})</span>
-                            </label>
-                          ))}
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-title flex items-center gap-1.5">
+                            <span>1. 按业务角色授权 (满足所选角色之一):</span>
+                          </span>
+                          <span className="text-[10px] text-text-sec font-mono">
+                            已选 {selectedRoleIds.length} 个角色
+                          </span>
+                        </div>
+
+                        <div className="flex flex-wrap gap-2 p-2.5 rounded-xl border border-card-border bg-card-surface">
+                          {rolesList.map((role) => {
+                            const isSelected = selectedRoleIds.includes(role.id);
+                            const { icon } = getRoleIconAndBadge(role.key);
+                            return (
+                              <button
+                                key={role.id}
+                                type="button"
+                                onClick={() => toggleRoleSelection(role.id)}
+                                className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all flex items-center gap-1.5 cursor-pointer ${
+                                  isSelected
+                                    ? 'bg-zpje-accent text-white border-zpje-accent shadow-xs'
+                                    : 'bg-canvas text-text-sec border-input-border hover:text-title hover:border-card-border'
+                                }`}
+                              >
+                                {isSelected ? <Check className="w-3.5 h-3.5" /> : <span>{icon}</span>}
+                                <span>{role.name}</span>
+                                <span className="opacity-60 text-[10px] font-mono">@{role.key}</span>
+                              </button>
+                            );
+                          })}
                         </div>
                       </div>
 
+                      {/* 2. 按组织部门授权 (带级联与搜索的折叠树) */}
                       <div className="flex flex-col gap-2">
-                        <span className="text-[10px] font-bold text-text-sec uppercase tracking-wider">分配给部门可见:</span>
-                        <div className="flex flex-col gap-1.5 max-h-36 overflow-y-auto border border-card-border bg-card-surface rounded-lg p-2.5">
-                          {departmentsTree.map(unit => (
-                            <div key={unit.id} className="flex flex-col gap-1">
-                              <span className="text-[9px] font-bold text-text-sec/60">{unit.name}</span>
-                              {unit.departments.map(dept => (
-                                <label key={dept.id} className="flex items-center gap-2 cursor-pointer text-xs text-title font-medium pl-1.5">
-                                  <input
-                                    type="checkbox"
-                                    checked={selectedDeptIds.includes(dept.id)}
-                                    onChange={() => toggleDeptSelection(dept.id)}
-                                    className="w-3.5 h-3.5 accent-title"
-                                  />
-                                  <span>{dept.name}</span>
-                                </label>
-                              ))}
-                            </div>
-                          ))}
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-title">
+                            2. 按组织部门授权 (所选部门全员可见):
+                          </span>
+                          <div className="flex items-center gap-2">
+                            {selectedDeptIds.length > 0 && (
+                              <button
+                                type="button"
+                                onClick={() => setSelectedDeptIds([])}
+                                className="text-[10px] text-red-500 hover:underline cursor-pointer"
+                              >
+                                清空已选 ({selectedDeptIds.length})
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* 部门折叠树组件 */}
+                        <div className="border border-card-border rounded-xl bg-card-surface overflow-hidden flex flex-col max-h-64">
+                          {/* 树顶部搜索栏 */}
+                          <div className="p-2 border-b border-card-border bg-sidebar-hover/20 flex items-center gap-2">
+                            <Search className="w-3.5 h-3.5 text-text-sec shrink-0" />
+                            <input
+                              type="text"
+                              placeholder="搜索部门名称或编码过滤..."
+                              value={deptTreeSearch}
+                              onChange={(e) => setDeptTreeSearch(e.target.value)}
+                              className="w-full bg-transparent text-xs text-title focus:outline-none"
+                            />
+                            {deptTreeSearch && (
+                              <button
+                                type="button"
+                                onClick={() => setDeptTreeSearch('')}
+                                className="text-text-sec hover:text-title"
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
+                            )}
+                          </div>
+
+                          {/* 树形列表 */}
+                          <div className="p-2 overflow-y-auto flex flex-col gap-1 text-xs">
+                            {departmentsTree.map((unit) => (
+                              <UnitTreeNodeView
+                                key={unit.id}
+                                unit={unit}
+                                selectedDeptIds={selectedDeptIds}
+                                toggleDepartmentSelection={toggleDepartmentSelection}
+                                toggleUnitSelection={toggleUnitSelection}
+                                searchTerm={deptTreeSearch}
+                              />
+                            ))}
+                          </div>
                         </div>
                       </div>
                     </div>
                   )}
                 </div>
-
-                {/* Theme Color Selector */}
-                <div className="flex flex-col gap-1.5 mt-2">
-                  <label className="text-xs font-bold text-text-sec uppercase tracking-wider">
-                    主题色彩 (Theme Color - 支持6位十六进制颜色)
-                  </label>
-                  <div className="flex items-center gap-3">
-                    {/* Native color picker palette */}
-                    <input
-                      type="color"
-                      value={color.startsWith('#') && color.length === 7 ? color : '#64748B'}
-                      onChange={(e) => setColor(e.target.value.toUpperCase())}
-                      className="w-10 h-10 p-0 rounded-lg border border-input-border bg-transparent cursor-pointer overflow-hidden shrink-0"
-                      title="选择颜色"
-                    />
-                    
-                    {/* Text input showing hex color */}
-                    <input
-                      type="text"
-                      value={color}
-                      onChange={(e) => {
-                        let val = e.target.value;
-                        // Keep hex styling or let user type freely, uppercase it
-                        if (val && !val.startsWith('#') && /^[0-9A-Fa-f]{0,6}$/.test(val)) {
-                          val = '#' + val;
-                        }
-                        setColor(val.toUpperCase());
-                      }}
-                      className="flex-1 px-3 py-2 rounded border border-input-border bg-card-surface text-title text-sm focus:outline-none focus:ring-1 focus:ring-title focus:border-title h-10 font-mono"
-                      placeholder="#10B981"
-                      maxLength={7}
-                    />
-                  </div>
-
-                  {/* Predefined quick color presets */}
-                  <div className="flex items-center gap-2.5 mt-1.5 flex-wrap">
-                    <span className="text-[10px] font-bold text-text-sec uppercase tracking-wider">快捷预设:</span>
-                    <div className="flex gap-2">
-                      {APP_COLORS_PRESETS.map((p) => (
-                        <button
-                          key={p.value}
-                          type="button"
-                          onClick={() => setColor(p.value)}
-                          className={`w-6 h-6 rounded-full border transition-all ${color.toUpperCase() === p.value.toUpperCase() ? 'scale-110 border-title ring-2 ring-zpje-accent/30' : 'border-card-border hover:scale-105'}`}
-                          style={{ backgroundColor: p.value }}
-                          title={p.label}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Maintenance switch */}
-                <div className="flex items-center gap-3 p-3 rounded-lg border border-card-border bg-sidebar-hover/40 mt-2">
-                  <input
-                    type="checkbox"
-                    id="isMaintenance"
-                    checked={isMaintenance}
-                    onChange={(e) => setIsMaintenance(e.target.checked)}
-                    className="w-4 h-4 accent-title cursor-pointer"
-                  />
-                  <label htmlFor="isMaintenance" className="text-sm font-semibold cursor-pointer select-none text-title">
-                    开启维护模式 (阻断跳转访问)
-                  </label>
-                </div>
               </div>
 
-              <div className="px-6 py-4 border-t border-card-border bg-sidebar-hover/20 flex items-center justify-end gap-3">
+              {/* Modal Footer */}
+              <div className="px-6 py-4 border-t border-card-border flex items-center justify-end gap-3 bg-sidebar-hover/10 shrink-0">
                 <button
                   type="button"
                   onClick={() => setIsModalOpen(false)}
-                  className="px-4 py-2 rounded-full border border-input-border bg-card-surface hover:bg-sidebar-hover transition-colors text-xs font-bold text-title"
+                  className="px-4 py-2 rounded-xl border border-input-border text-xs font-bold text-text-sec hover:text-title hover:bg-sidebar-hover transition-all"
                 >
                   取消
                 </button>
                 <button
                   type="submit"
                   disabled={isSubmitting}
-                  className="px-5 py-2 rounded-full bg-title text-card-surface hover:opacity-90 transition-colors text-xs font-bold disabled:opacity-50 flex items-center gap-1.5"
+                  className="px-5 py-2 rounded-xl bg-zpje-accent text-white text-xs font-bold hover:opacity-90 transition-all disabled:opacity-50"
                 >
-                  {isSubmitting ? (
-                    <span>保存中...</span>
-                  ) : (
-                    <>
-                      <Check className="w-3.5 h-3.5" />
-                      <span>确认保存</span>
-                    </>
-                  )}
+                  {isSubmitting ? '保存中...' : '保存应用配置'}
                 </button>
               </div>
             </form>
@@ -2381,153 +2543,577 @@ export default function AdminAppRegistry({
         </div>
       )}
 
-      {/* Widget Form Modal */}
+      {/* ========================================================================= */}
+      {/* Modal 4: Widget 新增/编辑弹窗 */}
+      {/* ========================================================================= */}
       {isWidgetModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
-          <div className="w-full max-w-lg bg-card-surface rounded-lg border border-card-border shadow-xl overflow-hidden animate-in fade-in zoom-in duration-200 text-text-main">
-            <div className="px-6 py-4 border-b border-card-border flex items-center justify-between bg-sidebar-hover/10">
-              <h2 className="text-lg font-bold text-title">
-                {editingWidget ? '编辑 Widget 看板' : '新增 Widget 看板'}
-              </h2>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="w-full max-w-lg bg-card-surface rounded-2xl border border-card-border shadow-2xl overflow-hidden">
+            <div className="px-6 py-4 border-b border-card-border flex items-center justify-between bg-sidebar-hover/20">
+              <h3 className="font-bold text-title text-sm">
+                {editingWidget ? '编辑 Widget' : '新增 Widget'}
+              </h3>
               <button
                 onClick={() => setIsWidgetModalOpen(false)}
-                className="p-1 rounded-full hover:bg-sidebar-hover text-text-sec hover:text-title"
+                className="p-1 rounded-lg text-text-sec hover:text-title hover:bg-sidebar-hover transition-colors"
               >
-                <X className="w-5 h-5" />
+                <X className="w-4 h-4" />
               </button>
             </div>
 
-            <form onSubmit={handleWidgetSubmit}>
-              <div className="p-6 flex flex-col gap-4">
-                {widgetError && (
-                  <div className="p-3 rounded bg-red-500/10 border border-red-500/20 text-red-500 text-xs flex items-start gap-2">
-                    <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-                    <span>{widgetError}</span>
-                  </div>
-                )}
+            <form onSubmit={handleWidgetSubmit} className="p-6 flex flex-col gap-4">
+              {widgetError && (
+                <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-500 text-xs">
+                  {widgetError}
+                </div>
+              )}
 
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-bold text-text-sec uppercase tracking-wider">
+                  组件标题 <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={widgetTitle}
+                  onChange={(e) => setWidgetTitle(e.target.value)}
+                  placeholder="例如: 能碳实时大屏"
+                  className="px-3 py-2 rounded-xl border border-input-border bg-canvas text-title text-sm focus:outline-none focus:ring-1 focus:ring-zpje-accent"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
                 <div className="flex flex-col gap-1.5">
                   <label className="text-xs font-bold text-text-sec uppercase tracking-wider">
-                    看板标题 <span className="text-red-500">*</span>
+                    关联应用 (选填)
                   </label>
-                  <input
-                    type="text"
-                    required
-                    value={widgetTitle}
-                    onChange={(e) => setWidgetTitle(e.target.value)}
-                    placeholder="例如: 能源平台实时负荷"
-                    className="px-3 py-2 rounded border border-input-border bg-card-surface text-title text-sm focus:outline-none focus:ring-1 focus:ring-title focus:border-title"
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="flex flex-col gap-1.5">
-                    <label className="text-xs font-bold text-text-sec uppercase tracking-wider">
-                      展现形式 (Type)
-                    </label>
-                    <select
-                      value={widgetType}
-                      onChange={(e) => setWidgetType(e.target.value)}
-                      className="px-3 py-2 rounded border border-input-border bg-card-surface text-title text-sm focus:outline-none focus:ring-1 focus:ring-title focus:border-title"
-                    >
-                      <option value="api">API 异步指标格</option>
-                      <option value="iframe">网页 Iframe 嵌入</option>
-                    </select>
-                  </div>
-
-                  <div className="flex flex-col gap-1.5">
-                    <label className="text-xs font-bold text-text-sec uppercase tracking-wider">
-                      关联子系统 (可选)
-                    </label>
-                    <select
-                      value={widgetAppId}
-                      onChange={(e) => setWidgetAppId(e.target.value)}
-                      className="px-3 py-2 rounded border border-input-border bg-card-surface text-title text-sm focus:outline-none focus:ring-1 focus:ring-title focus:border-title"
-                    >
-                      <option value="">-- 不绑定 --</option>
-                      {apps.map(app => (
-                        <option key={app.id} value={app.id}>{app.name}</option>
-                      ))}
-                    </select>
-                  </div>
+                  <select
+                    value={widgetAppId}
+                    onChange={(e) => setWidgetAppId(e.target.value)}
+                    className="px-3 py-2 rounded-xl border border-input-border bg-canvas text-title text-sm focus:outline-none focus:ring-1 focus:ring-zpje-accent cursor-pointer"
+                  >
+                    <option value="">-- 无关联 --</option>
+                    {apps.map((app) => (
+                      <option key={app.id} value={app.id}>
+                        {app.name}
+                      </option>
+                    ))}
+                  </select>
                 </div>
 
                 <div className="flex flex-col gap-1.5">
                   <label className="text-xs font-bold text-text-sec uppercase tracking-wider">
-                    {widgetType === 'api' ? '数据接口端点 (API Endpoint)' : '网页链接 (URL)'} <span className="text-red-500">*</span>
+                    排版宽度
                   </label>
-                  <input
-                    type="text"
-                    required
-                    value={widgetUrl}
-                    onChange={(e) => setWidgetUrl(e.target.value)}
-                    placeholder={widgetType === 'api' ? '如: /api/widgets/mock?key=carbon' : '如: https://oa.izpje.com/stats'}
-                    className="px-3 py-2 rounded border border-input-border bg-card-surface text-title text-sm focus:outline-none focus:ring-1 focus:ring-title focus:border-title font-mono"
-                  />
-                  <p className="text-[10px] text-text-sec leading-relaxed">
-                    {widgetType === 'api'
-                      ? '支持接口异步渲染。API 应返回 standard JSON: { "metrics": [ { "label": "名称", "value": "数据", "change": "趋势", "trend": "up/down/stable" } ] }'
-                      : '通过嵌入 iframe 技术在门户主板上完美呈现外部系统的可视化大屏网页。'}
-                  </p>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="flex flex-col gap-1.5">
-                    <label className="text-xs font-bold text-text-sec uppercase tracking-wider">
-                      横向占比 (Grid Width)
-                    </label>
-                    <select
-                      value={widgetWidthClass}
-                      onChange={(e) => setWidgetWidthClass(e.target.value)}
-                      className="px-3 py-2 rounded border border-input-border bg-card-surface text-title text-sm focus:outline-none focus:ring-1 focus:ring-title focus:border-title"
-                    >
-                      <option value="col-span-1">col-span-1 (占 1/3 宽度)</option>
-                      <option value="col-span-2">col-span-2 (占 2/3 宽度)</option>
-                      <option value="col-span-3">col-span-3 (整行铺满)</option>
-                    </select>
-                  </div>
-
-                  <div className="flex flex-col gap-1.5">
-                    <label className="text-xs font-bold text-text-sec uppercase tracking-wider">
-                      排序权值 (正整数)
-                    </label>
-                    <input
-                      type="number"
-                      value={widgetSortOrder}
-                      onChange={(e) => setWidgetSortOrder(Number(e.target.value))}
-                      className="px-3 py-2 rounded border border-input-border bg-card-surface text-title text-sm focus:outline-none focus:ring-1 focus:ring-title focus:border-title font-mono"
-                    />
-                  </div>
+                  <select
+                    value={widgetWidthClass}
+                    onChange={(e) => setWidgetWidthClass(e.target.value)}
+                    className="px-3 py-2 rounded-xl border border-input-border bg-canvas text-title text-sm focus:outline-none focus:ring-1 focus:ring-zpje-accent cursor-pointer"
+                  >
+                    <option value="col-span-1">单列宽度 (1格)</option>
+                    <option value="col-span-2">双列宽度 (2格)</option>
+                    <option value="col-span-3">三列宽度 (3格)</option>
+                  </select>
                 </div>
               </div>
 
-              <div className="px-6 py-4 border-t border-card-border bg-sidebar-hover/20 flex items-center justify-end gap-3">
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-bold text-text-sec uppercase tracking-wider">
+                  嵌入 URL <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={widgetUrl}
+                  onChange={(e) => setWidgetUrl(e.target.value)}
+                  placeholder="例如: https://screen.izpje.com"
+                  className="px-3 py-2 rounded-xl border border-input-border bg-canvas text-title text-sm font-mono focus:outline-none focus:ring-1 focus:ring-zpje-accent"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-4 border-t border-card-border">
                 <button
                   type="button"
                   onClick={() => setIsWidgetModalOpen(false)}
-                  className="px-4 py-2 rounded-full border border-input-border bg-card-surface hover:bg-sidebar-hover transition-colors text-xs font-bold text-title"
+                  className="px-4 py-2 rounded-xl border border-input-border text-xs font-bold text-text-sec hover:text-title hover:bg-sidebar-hover transition-all"
                 >
                   取消
                 </button>
                 <button
                   type="submit"
                   disabled={widgetSubmitting}
-                  className="px-5 py-2 rounded-full bg-title text-card-surface hover:opacity-90 transition-colors text-xs font-bold disabled:opacity-50 flex items-center gap-1.5"
+                  className="px-4 py-2 rounded-xl bg-zpje-accent text-white text-xs font-bold hover:opacity-90 transition-all disabled:opacity-50"
                 >
-                  {widgetSubmitting ? (
-                    <span>保存中...</span>
-                  ) : (
-                    <>
-                      <Check className="w-3.5 h-3.5" />
-                      <span>确认保存</span>
-                    </>
-                  )}
+                  {widgetSubmitting ? '保存中...' : '保存 Widget'}
                 </button>
               </div>
             </form>
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------------
+// 辅助子组件: 单位及部门折叠树节点视图 (支持搜索过滤与级联选择)
+// ---------------------------------------------------------------------------------
+function UnitTreeNodeView({
+  unit,
+  selectedDeptIds,
+  toggleDepartmentSelection,
+  toggleUnitSelection,
+  searchTerm
+}: {
+  unit: UnitTreeNode;
+  selectedDeptIds: string[];
+  toggleDepartmentSelection: (dept: DepartmentTreeNode) => void;
+  toggleUnitSelection: (unit: UnitTreeNode) => void;
+  searchTerm: string;
+}) {
+  const [isExpanded, setIsExpanded] = useState(true);
+  const unitDeptIds = getAllDeptIdsInUnit(unit);
+  const isAllUnitSelected = unitDeptIds.length > 0 && unitDeptIds.every((id) => selectedDeptIds.includes(id));
+  const isSomeUnitSelected = unitDeptIds.some((id) => selectedDeptIds.includes(id)) && !isAllUnitSelected;
+
+  return (
+    <div className="flex flex-col gap-1 border-b border-card-border/40 pb-1.5 last:border-b-0">
+      {/* Unit Level Header */}
+      <div className="flex items-center justify-between p-1 rounded hover:bg-sidebar-hover/40 transition-colors">
+        <div className="flex items-center gap-1.5 min-w-0">
+          <button
+            type="button"
+            onClick={() => setIsExpanded(!isExpanded)}
+            className="p-0.5 text-text-sec hover:text-title"
+          >
+            {isExpanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+          </button>
+          <div
+            onClick={() => toggleUnitSelection(unit)}
+            className="flex items-center gap-1.5 cursor-pointer select-none"
+          >
+            {isAllUnitSelected ? (
+              <CheckSquare className="w-3.5 h-3.5 text-zpje-accent" />
+            ) : isSomeUnitSelected ? (
+              <MinusSquare className="w-3.5 h-3.5 text-zpje-accent" />
+            ) : (
+              <Square className="w-3.5 h-3.5 text-text-sec" />
+            )}
+            <span className="font-bold text-title text-xs truncate">{unit.name}</span>
+          </div>
+        </div>
+        <span className="text-[10px] text-text-sec font-mono">{unit.departments.length} 个根部门</span>
+      </div>
+
+      {/* Child Departments */}
+      {isExpanded && (
+        <div className="pl-5 flex flex-col gap-0.5 border-l border-card-border/60 ml-2">
+          {unit.departments.map((dept) => (
+            <DeptTreeNodeView
+              key={dept.id}
+              node={dept}
+              selectedDeptIds={selectedDeptIds}
+              toggleDepartmentSelection={toggleDepartmentSelection}
+              searchTerm={searchTerm}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DeptTreeNodeView({
+  node,
+  selectedDeptIds,
+  toggleDepartmentSelection,
+  searchTerm
+}: {
+  node: DepartmentTreeNode;
+  selectedDeptIds: string[];
+  toggleDepartmentSelection: (dept: DepartmentTreeNode) => void;
+  searchTerm: string;
+}) {
+  const [isExpanded, setIsExpanded] = useState(true);
+  const descendantIds = getAllDescendantDeptIds(node);
+  const isNodeSelected = selectedDeptIds.includes(node.id);
+  const isAllDescendantSelected = descendantIds.every((id) => selectedDeptIds.includes(id));
+  const isSomeDescendantSelected = descendantIds.some((id) => selectedDeptIds.includes(id)) && !isAllDescendantSelected;
+
+  const hasChildren = node.children && node.children.length > 0;
+
+  // Search filtering
+  const isMatched =
+    !searchTerm.trim() ||
+    node.name.toLowerCase().includes(searchTerm.trim().toLowerCase()) ||
+    (node.code && node.code.toLowerCase().includes(searchTerm.trim().toLowerCase()));
+
+  if (!isMatched && !descendantIds.some((id) => selectedDeptIds.includes(id))) {
+    // Hide if not matched and no child selected
+    return null;
+  }
+
+  return (
+    <div className="flex flex-col gap-0.5">
+      <div className="flex items-center justify-between p-1 rounded hover:bg-sidebar-hover/40 transition-colors">
+        <div className="flex items-center gap-1.5 min-w-0">
+          {hasChildren ? (
+            <button
+              type="button"
+              onClick={() => setIsExpanded(!isExpanded)}
+              className="p-0.5 text-text-sec hover:text-title"
+            >
+              {isExpanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+            </button>
+          ) : (
+            <div className="w-4" />
+          )}
+
+          <div
+            onClick={() => toggleDepartmentSelection(node)}
+            className="flex items-center gap-1.5 cursor-pointer select-none truncate"
+          >
+            {isAllDescendantSelected ? (
+              <CheckSquare className="w-3.5 h-3.5 text-zpje-accent" />
+            ) : isSomeDescendantSelected ? (
+              <MinusSquare className="w-3.5 h-3.5 text-zpje-accent" />
+            ) : (
+              <Square className="w-3.5 h-3.5 text-text-sec" />
+            )}
+            <span
+              className={`text-xs truncate ${
+                isNodeSelected ? 'font-bold text-zpje-accent' : 'text-title'
+              }`}
+            >
+              {node.name}
+            </span>
+            {node.code && <span className="text-[10px] text-text-sec font-mono truncate">({node.code})</span>}
+          </div>
+        </div>
+      </div>
+
+      {hasChildren && isExpanded && (
+        <div className="pl-4 flex flex-col gap-0.5 border-l border-card-border/40 ml-2">
+          {node.children.map((child) => (
+            <DeptTreeNodeView
+              key={child.id}
+              node={child}
+              selectedDeptIds={selectedDeptIds}
+              toggleDepartmentSelection={toggleDepartmentSelection}
+              searchTerm={searchTerm}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------------
+// 辅助子组件: 批量添加成员穿梭/多选弹窗 (AddMemberModal)
+// ---------------------------------------------------------------------------------
+function AddMemberModal({
+  role,
+  departmentsTree,
+  existingMemberIds,
+  onClose,
+  onSuccess
+}: {
+  role: RoleOption;
+  departmentsTree: UnitTreeNode[];
+  existingMemberIds: string[];
+  onClose: () => void;
+  onSuccess: (addedMembers: RoleMemberItem[]) => void;
+}) {
+  const [selectedDeptId, setSelectedDeptId] = useState<string>('');
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [memberList, setMemberList] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([]);
+  const [submitting, setSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
+
+  const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // 检索人员
+  const fetchMembers = (query: string, deptId: string) => {
+    if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
+    setLoading(true);
+
+    searchTimeoutRef.current = setTimeout(async () => {
+      try {
+        const params = new URLSearchParams();
+        if (query.trim()) params.append('search', query.trim());
+        if (deptId) params.append('deptId', deptId);
+
+        const res = await fetch(`/api/admin/members?${params.toString()}`);
+        if (res.ok) {
+          const data = await res.json();
+          setMemberList(data);
+        }
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setLoading(false);
+      }
+    }, 250);
+  };
+
+  useEffect(() => {
+    fetchMembers(searchQuery, selectedDeptId);
+  }, [searchQuery, selectedDeptId]);
+
+  const toggleSelectMember = (memberId: string) => {
+    setSelectedMemberIds((prev) =>
+      prev.includes(memberId) ? prev.filter((id) => id !== memberId) : [...prev, memberId]
+    );
+  };
+
+  const handleSelectAllCurrent = () => {
+    const availableIds = memberList
+      .filter((m) => !existingMemberIds.includes(m.id))
+      .map((m) => m.id);
+
+    const isAllSelected = availableIds.length > 0 && availableIds.every((id) => selectedMemberIds.includes(id));
+
+    if (isAllSelected) {
+      setSelectedMemberIds((prev) => prev.filter((id) => !availableIds.includes(id)));
+    } else {
+      setSelectedMemberIds((prev) => Array.from(new Set([...prev, ...availableIds])));
+    }
+  };
+
+  const handleSubmit = async () => {
+    if (selectedMemberIds.length === 0) {
+      setErrorMessage('请至少选择一名员工');
+      return;
+    }
+
+    setSubmitting(true);
+    setErrorMessage('');
+
+    try {
+      const res = await fetch(`/api/admin/roles/${role.id}/members`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ memberIds: selectedMemberIds }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        setErrorMessage(data.error || '添加成员失败');
+        setSubmitting(false);
+        return;
+      }
+
+      // 构造新添加成员对象供即时视图响应
+      const addedObjects: RoleMemberItem[] = memberList
+        .filter((m) => selectedMemberIds.includes(m.id))
+        .map((m) => ({
+          id: m.id,
+          name: m.name,
+          loginName: m.loginName,
+          code: m.code,
+          adminType: m.adminType,
+          deptName: m.department?.name || '无部门',
+          unitName: m.unit?.name || '无单位',
+          joinedAt: new Date().toISOString(),
+        }));
+
+      onSuccess(addedObjects);
+    } catch (err: any) {
+      setErrorMessage(err.message || '网络异常');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm animate-in fade-in duration-200">
+      <div className="w-full max-w-4xl bg-card-surface rounded-2xl border border-card-border shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
+        {/* Header */}
+        <div className="px-6 py-4 border-b border-card-border flex items-center justify-between bg-sidebar-hover/20">
+          <div className="flex items-center gap-2">
+            <UserPlus className="w-5 h-5 text-zpje-accent" />
+            <h3 className="font-bold text-title text-base">
+              向【{role.name} ({role.key})】批量添加成员
+            </h3>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-1 rounded-lg text-text-sec hover:text-title hover:bg-sidebar-hover transition-colors"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Modal Body: Left Depts + Right Members */}
+        <div className="grid grid-cols-1 md:grid-cols-12 flex-1 overflow-hidden">
+          {/* Left: Department Tree Selector */}
+          <div className="md:col-span-4 border-r border-card-border p-4 bg-sidebar-hover/10 flex flex-col gap-3 overflow-y-auto">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-title">按致远 OA 部门快速筛选</span>
+              {selectedDeptId && (
+                <button
+                  type="button"
+                  onClick={() => setSelectedDeptId('')}
+                  className="text-[10px] text-zpje-accent hover:underline font-bold"
+                >
+                  查看全部
+                </button>
+              )}
+            </div>
+
+            <div className="flex flex-col gap-1 text-xs">
+              <div
+                onClick={() => setSelectedDeptId('')}
+                className={`p-2 rounded-xl border cursor-pointer transition-all ${
+                  selectedDeptId === ''
+                    ? 'bg-zpje-accent/10 border-zpje-accent text-zpje-accent font-bold'
+                    : 'bg-card-surface border-card-border hover:bg-sidebar-hover text-title'
+                }`}
+              >
+                全部部门与员工
+              </div>
+
+              {departmentsTree.map((unit) => (
+                <div key={unit.id} className="flex flex-col gap-1 mt-1">
+                  <div className="text-[10px] font-bold text-text-sec uppercase px-2 py-1">
+                    {unit.name}
+                  </div>
+                  {unit.departments.map((dept) => (
+                    <div
+                      key={dept.id}
+                      onClick={() => setSelectedDeptId(dept.id)}
+                      className={`px-3 py-1.5 rounded-lg border cursor-pointer transition-all flex items-center justify-between ${
+                        selectedDeptId === dept.id
+                          ? 'bg-zpje-accent/10 border-zpje-accent text-zpje-accent font-bold'
+                          : 'bg-card-surface border-card-border hover:bg-sidebar-hover text-title'
+                      }`}
+                    >
+                      <span className="truncate">{dept.name}</span>
+                      {dept.memberCount !== undefined && (
+                        <span className="text-[10px] text-text-sec font-mono">{dept.memberCount}人</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Right: Search & Member Selection List */}
+          <div className="md:col-span-8 p-4 flex flex-col gap-3 overflow-hidden bg-card-surface">
+            <div className="flex items-center gap-3">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-2.5 h-4 w-4 text-text-sec" />
+                <input
+                  type="text"
+                  placeholder="输入姓名、账号或工号搜索员工..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-9 pr-4 py-2 rounded-xl bg-canvas border border-input-border text-title text-xs focus:outline-none focus:ring-1 focus:ring-zpje-accent"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={handleSelectAllCurrent}
+                className="px-3 py-2 rounded-xl border border-input-border hover:bg-sidebar-hover text-title text-xs font-bold shrink-0 transition-colors"
+              >
+                全选列表
+              </button>
+            </div>
+
+            {errorMessage && (
+              <div className="p-2.5 rounded-xl bg-red-500/10 border border-red-500/20 text-red-500 text-xs">
+                {errorMessage}
+              </div>
+            )}
+
+            {/* Member Selection List */}
+            <div className="flex-1 overflow-y-auto border border-card-border rounded-xl p-2 flex flex-col gap-1.5 max-h-[380px]">
+              {loading ? (
+                <div className="text-center py-16 text-xs text-text-sec animate-pulse">
+                  正在检索员工数据...
+                </div>
+              ) : memberList.length > 0 ? (
+                memberList.map((member) => {
+                  const isAlreadyInRole = existingMemberIds.includes(member.id);
+                  const isSelected = selectedMemberIds.includes(member.id);
+
+                  return (
+                    <div
+                      key={member.id}
+                      onClick={() => !isAlreadyInRole && toggleSelectMember(member.id)}
+                      className={`p-2.5 rounded-xl border flex items-center justify-between gap-3 transition-all ${
+                        isAlreadyInRole
+                          ? 'bg-sidebar-hover/40 border-card-border opacity-50 cursor-not-allowed'
+                          : isSelected
+                          ? 'bg-zpje-accent/10 border-zpje-accent shadow-xs cursor-pointer'
+                          : 'bg-canvas border-card-border hover:border-zpje-accent/40 cursor-pointer'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        {isAlreadyInRole ? (
+                          <Check className="w-4 h-4 text-emerald-500 shrink-0" />
+                        ) : isSelected ? (
+                          <CheckSquare className="w-4 h-4 text-zpje-accent shrink-0" />
+                        ) : (
+                          <Square className="w-4 h-4 text-text-sec shrink-0" />
+                        )}
+                        <div className="truncate min-w-0">
+                          <div className="font-bold text-title text-xs flex items-center gap-2">
+                            <span>{member.name}</span>
+                            <span className="text-[10px] font-mono text-text-sec font-normal">
+                              @{member.loginName}
+                            </span>
+                            {isAlreadyInRole && (
+                              <span className="text-[10px] text-emerald-600 bg-emerald-500/10 px-1.5 py-0.2 rounded">
+                                已在该角色中
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[10px] text-text-sec mt-0.5 truncate">
+                            {member.department?.name || '无部门'} · {member.unit?.name || '无单位'}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
+              ) : (
+                <div className="text-center py-16 text-xs text-text-sec italic">
+                  未找到匹配的员工。请在上方输入姓名/账号检索。
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="px-6 py-4 border-t border-card-border bg-sidebar-hover/10 flex items-center justify-between">
+          <span className="text-xs font-bold text-title">
+            已勾选 <span className="text-zpje-accent font-mono text-sm">{selectedMemberIds.length}</span> 名员工
+          </span>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 rounded-xl border border-input-border text-xs font-bold text-text-sec hover:text-title hover:bg-sidebar-hover transition-all"
+            >
+              取消
+            </button>
+            <button
+              type="button"
+              onClick={handleSubmit}
+              disabled={submitting || selectedMemberIds.length === 0}
+              className="px-5 py-2 rounded-xl bg-zpje-accent text-white text-xs font-bold hover:opacity-90 transition-all disabled:opacity-50"
+            >
+              {submitting ? '添加中...' : `确认添加 (${selectedMemberIds.length})`}
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

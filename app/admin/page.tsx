@@ -120,63 +120,70 @@ export default async function AdminPage() {
   const memberNameMap = new Map(logMembers.map(m => [m.loginName, m.name]));
 
   const roles = await prisma.role.findMany({
+    include: {
+      _count: {
+        select: {
+          members: true,
+        },
+      },
+    },
     orderBy: {
-      key: 'asc'
-    }
+      key: 'asc',
+    },
   });
 
   const widgets = await prisma.widget.findMany({
     include: {
       app: {
         select: {
-          name: true
-        }
-      }
+          name: true,
+        },
+      },
     },
     orderBy: {
-      sortOrder: 'asc'
-    }
+      sortOrder: 'asc',
+    },
   });
 
   const systemLogs = await prisma.systemLog.findMany({
     orderBy: {
-      timestamp: 'desc'
-    }
+      timestamp: 'desc',
+    },
   });
 
   const adminMembers = await prisma.member.findMany({
     where: {
       adminType: {
-        in: ['SYS_ADMIN', 'OPS_ADMIN', 'DEPT_ADMIN']
-      }
+        in: ['SYS_ADMIN', 'OPS_ADMIN', 'DEPT_ADMIN'],
+      },
     },
     include: {
       department: { select: { name: true } },
-      unit: { select: { name: true } }
+      unit: { select: { name: true } },
     },
     orderBy: {
-      name: 'asc'
-    }
+      name: 'asc',
+    },
   });
 
   const initialRoleAssignedMembers = await prisma.member.findMany({
     where: {
       roles: {
-        some: {}
-      }
+        some: {},
+      },
     },
     include: {
       unit: { select: { name: true } },
       department: { select: { name: true } },
       roles: {
         include: {
-          role: true
-        }
-      }
+          role: true,
+        },
+      },
     },
     orderBy: {
-      name: 'asc'
-    }
+      name: 'asc',
+    },
   });
 
   // Serialize models safely for client
@@ -193,25 +200,43 @@ export default async function AdminPage() {
     mainDeptId: app.mainDeptId || null,
     mainDept: app.mainDept ? { id: app.mainDept.id, name: app.mainDept.name } : null,
     visibleToAll: app.visibleToAll,
-    roleIds: app.rolePermissions.map(rp => rp.roleId),
-    deptIds: app.deptPermissions.map(dp => dp.departmentId),
+    roleIds: app.rolePermissions.map((rp) => rp.roleId),
+    deptIds: app.deptPermissions.map((dp) => dp.departmentId),
   }));
 
-  const serializedUnits = units
-    .map((unit) => {
-      const filteredDepts = unit.departments
-        .filter((dept) => dept.code && dept.code.startsWith('JA'))
-        .map((dept) => ({
-          id: dept.id,
-          name: dept.name,
-        }));
-      return {
-        id: unit.id,
-        name: unit.name,
-        departments: filteredDepts,
-      };
-    })
-    .filter((unit) => unit.departments.length > 0);
+  // Build hierarchical departments tree
+  const serializedUnits = units.map((unit) => {
+    const deptMap = new Map<string, any>();
+    const rootDepts: any[] = [];
+
+    unit.departments.forEach((d) => {
+      deptMap.set(d.id, {
+        id: d.id,
+        name: d.name,
+        code: d.code,
+        parentId: d.parentId,
+        orgAccountId: unit.id,
+        unitName: unit.name,
+        children: [],
+      });
+    });
+
+    unit.departments.forEach((d) => {
+      const node = deptMap.get(d.id)!;
+      if (d.parentId && deptMap.has(d.parentId)) {
+        deptMap.get(d.parentId)!.children.push(node);
+      } else {
+        rootDepts.push(node);
+      }
+    });
+
+    return {
+      id: unit.id,
+      name: unit.name,
+      code: unit.code,
+      departments: rootDepts,
+    };
+  });
 
   const serializedAccessLogs = accessLogs.map((log) => ({
     id: log.id,
@@ -223,14 +248,16 @@ export default async function AdminPage() {
     timestamp: log.timestamp.toISOString(),
     app: {
       name: log.app?.name || '未知应用',
-      key: log.app?.key || 'unknown'
-    }
+      key: log.app?.key || 'unknown',
+    },
   }));
 
   const serializedRoles = roles.map((role) => ({
     id: role.id,
     key: role.key,
-    name: role.name
+    name: role.name,
+    description: role.description || null,
+    memberCount: role._count.members,
   }));
 
   const serializedWidgets = widgets.map((w) => ({
