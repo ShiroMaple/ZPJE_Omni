@@ -2,6 +2,18 @@
 
 This file records substantive progress in reverse-chronological order — newest entry at the top, right below this line. Keep each entry short — summary and pointer only; conclusions settle into `cairn/<topic>.md`.
 
+## 2026-08-20 · 前台应用卡片现代轻量极简重构与角落弥散径向渐变（Radial Ambient Glow）
+- **角落弥散径向渐变（Radial Ambient Glow）**：卡片主体保持纯净底色（亮/暗模式自适应），右上角（`circle at 100% 0%`）隐约透出系统专属主题色光晕（默认 7%~12%），Hover 状态平滑增强（14%~24%）并产生对应主题色的环境漫反射投影（`0 12px 24px -6px rgba(theme-rgb, 0.2)`）。
+- **顶部排版升级**：
+  - 左侧：44×44px 渐变浅底圆角 Duotone 图标（`linear-gradient` 微渐变浅色背景 + 主题色高质感图标）。
+  - 右侧：运行状态精简化（正常运行仅保留呼吸微绿点，异常/维护才展示文字药丸），收藏 ⭐ 按钮支持默认低透明度灰色与高亮金黄切换。
+- **中部信息聚焦**：
+  - 部门标签升级为轻量描边微胶囊（Tag）位于标题上方。
+  - 应用标题 16px 加粗并配置 `line-clamp-2` 防超长截断，搭配精炼应用描述。
+- **底部触发器精简化**：
+  - 移除冗余“进入系统”文字，精简为主题色“访问 →”并在 Hover 时附带微移动动效。
+- 代码推送到 GitHub，自动化部署生产服务器并编译验证通过。
+
 ## 2026-08-20 · 管理后台深海蓝风格统一、Header 四段式重构与审计表格全高自适应
 - **侧边栏统一深海蓝**：管理后台全面采用前台深蓝底色（`bg-zpje-brand` / `#004085`），统一企业 Logo（`建安万维` + `Omni 管理后台`），底部常驻“系统运行正常”呼吸灯与收起侧边栏控制器。
 - **Header 四段式布局**：标准化为 `[返回门户前台] -> [明暗切换] -> [绿点+姓名+Popover] -> [退出登录]`。
